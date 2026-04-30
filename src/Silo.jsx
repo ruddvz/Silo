@@ -1876,6 +1876,7 @@ export default function Silo() {
           {!opfsReady && <span>On-device vault unavailable here — demo only.</span>}
         </div>
       )}
+
       {ingestError && (
         <div style={{ padding: "0 28px 12px", fontSize: 11, color: "#C86E8A" }}>
           {ingestError}
