@@ -1,7 +1,7 @@
 import { create, insert, search } from "@orama/orama";
 
 /**
- * @param {Array<{ id: string | number, name: string, tag: string, content: string }>} documents
+ * @param {Array<{ id: string | number, name: string, tag: string, kind?: string, content: string }>} documents
  */
 export function buildVaultSearchIndex(documents) {
   const db = create({
@@ -27,11 +27,12 @@ export function buildVaultSearchIndex(documents) {
   });
 
   for (const d of documents) {
+    const kind = d.kind || "pdf";
     insert(db, {
       docId: String(d.id),
       name: d.name,
       tag: d.tag,
-      content: `${d.name} ${d.tag} ${d.content}`,
+      content: `${d.name} ${d.tag} ${kind} ${d.content}`,
     });
   }
 

@@ -4,29 +4,39 @@ import {
   getVaultRoot,
   loadManifest,
   saveManifest,
-  persistUploadedPdf,
+  persistVaultBlob,
   persistExtractedText,
   loadExtractedText,
   deleteVaultItem,
-  readVaultPdfFile,
+  readVaultBlobFile,
 } from "./vault/opfs.js";
 import { buildVaultSearchIndex } from "./vault/searchIndex.js";
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
 const SEED_DOCS = [
-  { id: 1,  name: "passport_scan.pdf",      tag: "Identity",  date: "Mar 12, 2024", size: "2.1 MB",  source: "demo", createdAt: "2024-03-12T12:00:00.000Z" },
-  { id: 2,  name: "drivers_license.pdf",    tag: "Identity",  date: "Jan 08, 2024", size: "980 KB", source: "demo", createdAt: "2024-01-08T12:00:00.000Z" },
-  { id: 11, name: "sincard.pdf",            tag: "Identity",  date: "May 01, 2023", size: "150 KB", source: "demo", createdAt: "2023-05-01T12:00:00.000Z" },
-  { id: 3,  name: "hydro_bill_feb.pdf",     tag: "Utilities", date: "Feb 28, 2024", size: "340 KB", source: "demo", createdAt: "2024-02-28T12:00:00.000Z" },
-  { id: 8,  name: "hydro_bill_jan.pdf",     tag: "Utilities", date: "Jan 29, 2024", size: "310 KB", source: "demo", createdAt: "2024-01-29T12:00:00.000Z" },
-  { id: 4,  name: "lease_agreement.pdf",    tag: "Housing",   date: "Sep 01, 2023", size: "4.8 MB", source: "demo", createdAt: "2023-09-01T12:00:00.000Z" },
-  { id: 12, name: "lease_renewal_2024.pdf", tag: "Housing",   date: "Mar 15, 2024", size: "3.1 MB", source: "demo", createdAt: "2024-03-15T12:00:00.000Z" },
-  { id: 5,  name: "t4_2023.pdf",            tag: "Tax",       date: "Feb 20, 2024", size: "1.2 MB", source: "demo", createdAt: "2024-02-20T12:00:00.000Z" },
-  { id: 9,  name: "bank_statement_mar.pdf", tag: "Finance",   date: "Mar 31, 2024", size: "890 KB", source: "demo", createdAt: "2024-03-31T12:00:00.000Z" },
-  { id: 10, name: "void_cheque.pdf",        tag: "Finance",   date: "Nov 10, 2023", size: "220 KB", source: "demo", createdAt: "2023-11-10T12:00:00.000Z" },
-  { id: 6,  name: "insurance_auto.pdf",     tag: "Insurance", date: "Jan 15, 2024", size: "2.6 MB", source: "demo", createdAt: "2024-01-15T12:00:00.000Z" },
-  { id: 7,  name: "college_diploma.pdf",    tag: "Education", date: "Jun 15, 2022", size: "5.3 MB", source: "demo", createdAt: "2022-06-15T12:00:00.000Z" },
+  { id: 1,  name: "passport_scan.pdf",      tag: "Identity",  kind: "pdf",  date: "Mar 12, 2024", size: "2.1 MB",  source: "demo", createdAt: "2024-03-12T12:00:00.000Z" },
+  { id: 2,  name: "drivers_license.pdf",    tag: "Identity",  kind: "pdf",  date: "Jan 08, 2024", size: "980 KB", source: "demo", createdAt: "2024-01-08T12:00:00.000Z" },
+  { id: 11, name: "sincard.pdf",            tag: "Identity",  kind: "pdf",  date: "May 01, 2023", size: "150 KB", source: "demo", createdAt: "2023-05-01T12:00:00.000Z" },
+  { id: 3,  name: "hydro_bill_feb.pdf",     tag: "Utilities", kind: "pdf",  date: "Feb 28, 2024", size: "340 KB", source: "demo", createdAt: "2024-02-28T12:00:00.000Z" },
+  { id: 8,  name: "hydro_bill_jan.pdf",     tag: "Utilities", kind: "pdf",  date: "Jan 29, 2024", size: "310 KB", source: "demo", createdAt: "2024-01-29T12:00:00.000Z" },
+  { id: 4,  name: "lease_agreement.pdf",    tag: "Housing",   kind: "pdf",  date: "Sep 01, 2023", size: "4.8 MB", source: "demo", createdAt: "2023-09-01T12:00:00.000Z" },
+  { id: 12, name: "lease_renewal_2024.pdf", tag: "Housing",   kind: "pdf",  date: "Mar 15, 2024", size: "3.1 MB", source: "demo", createdAt: "2024-03-15T12:00:00.000Z" },
+  { id: 5,  name: "t4_2023.pdf",            tag: "Tax",       kind: "pdf",  date: "Feb 20, 2024", size: "1.2 MB", source: "demo", createdAt: "2024-02-20T12:00:00.000Z" },
+  { id: 9,  name: "bank_statement_mar.pdf", tag: "Finance",   kind: "pdf",  date: "Mar 31, 2024", size: "890 KB", source: "demo", createdAt: "2024-03-31T12:00:00.000Z" },
+  { id: 10, name: "void_cheque.pdf",        tag: "Finance",   kind: "pdf",  date: "Nov 10, 2023", size: "220 KB", source: "demo", createdAt: "2023-11-10T12:00:00.000Z" },
+  { id: 6,  name: "insurance_auto.pdf",     tag: "Insurance", kind: "pdf",  date: "Jan 15, 2024", size: "2.6 MB", source: "demo", createdAt: "2024-01-15T12:00:00.000Z" },
+  { id: 7,  name: "college_diploma.pdf",    tag: "Education", kind: "pdf",  date: "Jun 15, 2022", size: "5.3 MB", source: "demo", createdAt: "2022-06-15T12:00:00.000Z" },
+  {
+    id: 20,
+    name: "WhatsApp — rent reminder.txt",
+    tag: "Moments",
+    kind: "text",
+    date: "Apr 02, 2024",
+    size: "420 B",
+    source: "demo",
+    createdAt: "2024-04-02T18:30:00.000Z",
+  },
 ];
 
 /** Extra phrases so demo search behaves more like semantic "concepts" */
@@ -43,6 +53,7 @@ const DEMO_INDEX_BOOST = {
   10: "cheque checking account void finance",
   6: "auto vehicle car insurance policy",
   7: "university college degree diploma education",
+  20: "whatsapp message forwarded note self chat reminder landlord rent due april",
 };
 
 const TAG_META = {
@@ -53,9 +64,21 @@ const TAG_META = {
   Finance:   { color: "#D4935A", bg: "rgba(212,147,90,0.10)",  label: "FIN" },
   Insurance: { color: "#9B7EC8", bg: "rgba(155,126,200,0.10)", label: "INS" },
   Education: { color: "#C8B43E", bg: "rgba(200,180,62,0.10)",  label: "EDU" },
+  Moments:   { color: "#5BC8C4", bg: "rgba(91,200,196,0.10)",  label: "MSG" },
 };
 
 const ALL_TAGS = ["All", ...Object.keys(TAG_META)];
+
+const DEMO_TEXT_BODY = {
+  20: "Hey — reminder rent is due April 5. E-transfer to the usual address. Thx!",
+};
+
+function kindLabel(kind) {
+  if (kind === "text") return "MSG";
+  if (kind === "audio") return "MIC";
+  if (kind === "pdf") return "PDF";
+  return "FILE";
+}
 
 const SETTINGS_OPTIONS = [
   { label: "Sort by name",    icon: "↑↓" },
@@ -96,7 +119,15 @@ function inferTagGuess(text) {
   if (/bank|statement|cheque|check|finance|account/.test(t)) return "Finance";
   if (/insurance|policy|premium|auto coverage/.test(t)) return "Insurance";
   if (/diploma|degree|university|college|education/.test(t)) return "Education";
+  if (/whatsapp|telegram|signal|imessage|slack|discord|texted|fwd:|forwarded/.test(t)) return "Moments";
   return "Identity";
+}
+
+/** @param {string} text */
+function inferTagForNote(text) {
+  const t = text.toLowerCase();
+  if (/whatsapp|telegram|signal|imessage|slack|discord|texted|fwd:|forwarded|dm /.test(t)) return "Moments";
+  return inferTagGuess(text);
 }
 
 function mergeDocs(seed, local) {
@@ -108,6 +139,10 @@ function mergeDocs(seed, local) {
     const tb = new Date(b.createdAt || 0).getTime();
     return tb - ta;
   });
+}
+
+function tagMeta(tag) {
+  return TAG_META[tag] || { color: "#848480", bg: "rgba(132,132,128,0.10)", label: "…" };
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -137,7 +172,12 @@ function Toast({ message, onDone }) {
 }
 
 function RenameModal({ doc, onConfirm, onCancel }) {
-  const [value, setValue] = useState(doc.name.replace(".pdf", ""));
+  const extMatch = doc.name.match(/(\.[^.]+)$/);
+  let ext = extMatch ? extMatch[1] : "";
+  if (doc.kind === "text") ext = ".txt";
+  else if (!ext) ext = doc.kind === "pdf" ? ".pdf" : "";
+  const baseInitial = ext ? doc.name.slice(0, doc.name.length - ext.length) : doc.name;
+  const [value, setValue] = useState(baseInitial);
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -146,7 +186,8 @@ function RenameModal({ doc, onConfirm, onCancel }) {
   }, []);
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter")  onConfirm(value.trim() + ".pdf");
+    const next = (value.trim() || "untitled") + ext;
+    if (e.key === "Enter")  onConfirm(next);
     if (e.key === "Escape") onCancel();
   };
 
@@ -164,10 +205,10 @@ function RenameModal({ doc, onConfirm, onCancel }) {
           width: "calc(100% - 56px)", maxWidth: 400,
           background: "#111", border: "1px solid #282828", borderRadius: 24, padding: 24, zIndex: 1400,
         }}
-        role="dialog" aria-modal="true" aria-label="Rename document"
+        role="dialog" aria-modal="true" aria-label="Rename item"
       >
         <div style={{ fontSize: 11, color: "#848480", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 16 }}>
-          Rename document
+          Rename
         </div>
         <input
           ref={inputRef}
@@ -181,6 +222,7 @@ function RenameModal({ doc, onConfirm, onCancel }) {
             fontFamily: "'JetBrains Mono', monospace", outline: "none",
           }}
         />
+        <div style={{ fontSize: 10, color: "#3A3A38", marginTop: 8 }}>{ext ? `Keeps extension ${ext}` : "No extension enforced"}</div>
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button
             onClick={onCancel}
@@ -193,14 +235,119 @@ function RenameModal({ doc, onConfirm, onCancel }) {
             Cancel
           </button>
           <button
-            onClick={() => onConfirm(value.trim() + ".pdf")}
+            onClick={() => onConfirm((value.trim() || "untitled") + ext)}
             style={{
               flex: 1, padding: "10px 0", borderRadius: 12, border: "none",
               background: "#C8963E", color: "#000", fontSize: 13, fontWeight: 600, cursor: "pointer",
               fontFamily: "'JetBrains Mono', monospace",
             }}
           >
-            Rename
+            Save
+          </button>
+        </div>
+      </motion.div>
+    </>
+  );
+}
+
+function NoteModal({ onSave, onCancel }) {
+  const [body, setBody] = useState("");
+  const taRef = useRef(null);
+
+  useEffect(() => {
+    taRef.current?.focus();
+  }, []);
+
+  const handlePaste = async () => {
+    try {
+      const t = await navigator.clipboard.readText();
+      if (t) setBody((b) => (b ? `${b}\n${t}` : t));
+    } catch {
+      /* no permission */
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Escape") onCancel();
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      const t = body.trim();
+      if (t) onSave(t);
+    }
+  };
+
+  return (
+    <>
+      <motion.div
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(10px)", zIndex: 1300 }}
+        onClick={onCancel}
+      />
+      <motion.div
+        initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
+        style={{
+          position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
+          width: "calc(100% - 56px)", maxWidth: 400,
+          background: "#111", border: "1px solid #282828", borderRadius: 24, padding: 24, zIndex: 1400,
+        }}
+        role="dialog" aria-modal="true" aria-label="New text note"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ fontSize: 11, color: "#848480", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
+          Text note
+        </div>
+        <div style={{ fontSize: 10, color: "#3A3A38", marginBottom: 12 }}>
+          Paste a message you would have sent yourself — like WhatsApp to self.
+        </div>
+        <textarea
+          ref={taRef}
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          onKeyDown={handleKeyDown}
+          rows={8}
+          placeholder="Type or paste…"
+          style={{
+            width: "100%", boxSizing: "border-box", resize: "vertical", minHeight: 140,
+            background: "#1A1A1A", border: "1px solid #2a2a2a", borderRadius: 12,
+            padding: "12px 14px", color: "#EDECEA", fontSize: 13,
+            fontFamily: "'JetBrains Mono', monospace", outline: "none",
+          }}
+        />
+        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={handlePaste}
+            style={{
+              padding: "8px 14px", borderRadius: 12, border: "1px solid #282828",
+              background: "transparent", color: "#848480", fontSize: 12, cursor: "pointer",
+              fontFamily: "'JetBrains Mono', monospace",
+            }}
+          >
+            Paste from clipboard
+          </button>
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{
+              flex: 1, padding: "10px 0", borderRadius: 12, border: "1px solid #282828",
+              background: "transparent", color: "#848480", fontSize: 13, cursor: "pointer",
+              fontFamily: "'JetBrains Mono', monospace",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => { const t = body.trim(); if (t) onSave(t); }}
+            style={{
+              flex: 1, padding: "10px 0", borderRadius: 12, border: "none",
+              background: "#5BC8C4", color: "#000", fontSize: 13, fontWeight: 600, cursor: "pointer",
+              fontFamily: "'JetBrains Mono', monospace",
+            }}
+          >
+            Save to vault
           </button>
         </div>
       </motion.div>
@@ -331,17 +478,19 @@ function ContextMenu({ doc, onAction, onClose }) {
 export default function Silo() {
   const [activeTag,     setActiveTag]     = useState("All");
   const [query,         setQuery]         = useState("");
-  const [docs,          setDocs]          = useState(() => SEED_DOCS.map((d) => ({ ...d })));
+  const [docs,          setDocs]          = useState(() => SEED_DOCS.map((d) => ({ ...d, kind: d.kind || "pdf" })));
   const [contentById,  setContentById]   = useState(() => {
     const o = {};
     for (const d of SEED_DOCS) {
-      o[d.id] = `${d.name.replace(/\.pdf$/i, "").replace(/_/g, " ")} ${d.tag} ${DEMO_INDEX_BOOST[d.id] || ""}`;
+      if (d.kind === "text" && DEMO_TEXT_BODY[d.id]) o[d.id] = DEMO_TEXT_BODY[d.id];
+      else o[d.id] = `${String(d.name).replace(/\.(pdf|txt)$/i, "").replace(/_/g, " ")} ${d.tag} ${DEMO_INDEX_BOOST[d.id] || ""}`;
     }
     return o;
   });
   const [opfsReady,     setOpfsReady]     = useState(false);
   const [ingestBusy,    setIngestBusy]    = useState(false);
   const [ingestError,   setIngestError]   = useState(null);
+  const [noteModalOpen, setNoteModalOpen] = useState(false);
 
   const [contextMenu,   setContextMenu]   = useState(null);
   const [renameDoc,     setRenameDoc]     = useState(null);
@@ -353,7 +502,7 @@ export default function Silo() {
   const searchRef        = useRef(null);
   const styleInjected    = useRef(false);
   const vaultRef         = useRef(null);
-  const uploadInputRef   = useRef(null);
+  const vaultFileInputRef = useRef(null);
 
   // ── Inject global styles once ──
   useEffect(() => {
@@ -463,6 +612,7 @@ export default function Silo() {
           id: e.id,
           name: e.name,
           tag: e.tag,
+          kind: e.kind || "pdf",
           date: formatDate(e.createdAt),
           size: formatBytes(e.sizeBytes),
           source: "local",
@@ -482,6 +632,7 @@ export default function Silo() {
       id: d.id,
       name: d.name,
       tag: d.tag,
+      kind: d.kind || "pdf",
       content: contentById[d.id] ?? "",
     }));
     return buildVaultSearchIndex(rows);
@@ -496,7 +647,10 @@ export default function Silo() {
       const idOk = idSet == null || idSet.has(String(d.id));
       return tagOk && idOk;
     });
-    return Object.keys(TAG_META).reduce((acc, tag) => {
+    const tagOrder = Object.keys(TAG_META);
+    const extra = [...new Set(filtered.map((d) => d.tag))].filter((t) => !TAG_META[t]).sort();
+    const orderedTags = [...tagOrder.filter((t) => filtered.some((d) => d.tag === t)), ...extra];
+    return orderedTags.reduce((acc, tag) => {
       const items = filtered.filter((doc) => doc.tag === tag);
       if (items.length) acc[tag] = items;
       return acc;
@@ -516,8 +670,26 @@ export default function Silo() {
   }, [docs]);
 
   const handleOpenDoc = useCallback(async (doc) => {
+    const k = doc.kind || "pdf";
+    if (doc.source === "demo") {
+      if (k === "text") {
+        const body = contentById[doc.id] ?? "";
+        showToast(body ? `Note: ${body.slice(0, 100)}${body.length > 100 ? "…" : ""}` : "Empty note");
+        return;
+      }
+      showToast(`Opening ${doc.name}…`);
+      return;
+    }
     if (doc.source === "local" && vaultRef.current) {
-      const file = await readVaultPdfFile(vaultRef.current, String(doc.id));
+      if (k === "text") {
+        let body = contentById[doc.id];
+        if (body == null || body === "") {
+          body = (await loadExtractedText(vaultRef.current, String(doc.id))) ?? "";
+        }
+        showToast(body ? `Note: ${body.slice(0, 120)}${body.length > 120 ? "…" : ""}` : "Empty note");
+        return;
+      }
+      const file = await readVaultBlobFile(vaultRef.current, String(doc.id));
       if (file) {
         const url = URL.createObjectURL(file);
         window.open(url, "_blank", "noopener,noreferrer");
@@ -527,55 +699,72 @@ export default function Silo() {
       }
     }
     showToast(`Opening ${doc.name}…`);
-  }, [showToast]);
+  }, [showToast, contentById]);
 
-  const handlePickPdf = useCallback(() => {
-    uploadInputRef.current?.click();
+  const ensureVault = useCallback(async () => {
+    let v = vaultRef.current;
+    if (!v) {
+      v = await getVaultRoot();
+      vaultRef.current = v;
+    }
+    return v;
   }, []);
 
-  const handlePdfFiles = useCallback(async (fileList) => {
+  const handlePickVaultFile = useCallback(() => {
+    vaultFileInputRef.current?.click();
+  }, []);
+
+  const handleVaultFiles = useCallback(async (fileList) => {
     const file = fileList?.[0];
     if (!file) return;
-    let vault = vaultRef.current;
-    if (!vault) {
-      vault = await getVaultRoot();
-      vaultRef.current = vault;
-    }
+    const vault = await ensureVault();
     if (!vault) {
       setIngestError("Private on-device storage (OPFS) is not available here. Use HTTPS or a supported browser.");
-      if (uploadInputRef.current) uploadInputRef.current.value = "";
+      if (vaultFileInputRef.current) vaultFileInputRef.current.value = "";
       return;
     }
-    if (!file.name.toLowerCase().endsWith(".pdf")) {
-      setIngestError("Please choose a PDF file.");
-      return;
-    }
+    const lower = file.name.toLowerCase();
+    let kind = "file";
+    if (lower.endsWith(".pdf")) kind = "pdf";
+    else if (/\.(m4a|aac|mp3|wav|webm|ogg|opus|flac)$/i.test(lower)) kind = "audio";
+
     setIngestError(null);
     setIngestBusy(true);
     try {
       const id = crypto.randomUUID();
-      const buffer = await file.arrayBuffer();
-      const { extractTextFromPdfBuffer } = await import("./vault/extractPdfText.js");
-      const text = await extractTextFromPdfBuffer(buffer);
-      const tag = inferTagGuess(text + " " + file.name);
       const createdAt = new Date().toISOString();
-      const entry = {
+      let indexText = "";
+
+      if (kind === "pdf") {
+        const buffer = await file.arrayBuffer();
+        const { extractTextFromPdfBuffer } = await import("./vault/extractPdfText.js");
+        indexText = await extractTextFromPdfBuffer(buffer);
+      } else if (kind === "audio") {
+        indexText = `voice note audio recording ${file.name}`;
+      } else {
+        indexText = `file attachment ${file.type || "binary"} ${file.name}`;
+      }
+
+      const tag = inferTagGuess(`${indexText} ${file.name}`);
+      await persistVaultBlob(vault, id, file);
+      await persistExtractedText(vault, id, indexText);
+      const entries = await loadManifest(vault);
+      entries.push({
         id,
         name: file.name,
         tag,
+        kind,
         createdAt,
         sizeBytes: file.size,
-      };
-      await persistUploadedPdf(vault, file, { id, name: file.name, tag });
-      await persistExtractedText(vault, id, text);
-      const entries = await loadManifest(vault);
-      entries.push(entry);
+        mimeType: file.type || undefined,
+      });
       await saveManifest(vault, entries);
 
       const row = {
         id,
         name: file.name,
         tag,
+        kind,
         date: formatDate(createdAt),
         size: formatBytes(file.size),
         source: "local",
@@ -583,16 +772,73 @@ export default function Silo() {
         sizeBytes: file.size,
       };
       setDocs((prev) => mergeDocs(prev, [row]));
-      setContentById((prev) => ({ ...prev, [id]: text }));
-      showToast("PDF indexed locally");
+      setContentById((prev) => ({ ...prev, [id]: indexText }));
+      showToast(kind === "pdf" ? "PDF indexed locally" : kind === "audio" ? "Voice note saved" : "File saved to vault");
     } catch (err) {
       console.error(err);
-      setIngestError(err?.message || "Could not process this PDF.");
+      setIngestError(err?.message || "Could not save this file.");
     } finally {
       setIngestBusy(false);
-      if (uploadInputRef.current) uploadInputRef.current.value = "";
+      if (vaultFileInputRef.current) vaultFileInputRef.current.value = "";
     }
-  }, [showToast]);
+  }, [ensureVault, showToast]);
+
+  const handleSaveTextNote = useCallback(async (rawText) => {
+    const text = rawText.trim();
+    if (!text) return;
+    const vault = await ensureVault();
+    if (!vault) {
+      setIngestError("Private on-device storage (OPFS) is not available here. Use HTTPS or a supported browser.");
+      return;
+    }
+    setNoteModalOpen(false);
+    setIngestError(null);
+    setIngestBusy(true);
+    try {
+      const id = crypto.randomUUID();
+      const preview = text.slice(0, 40).replace(/\s+/g, " ");
+      const name = `Note — ${preview}${text.length > 40 ? "…" : ""}.txt`;
+      const tag = inferTagForNote(text);
+      const createdAt = new Date().toISOString();
+      const enc = new TextEncoder();
+      const sizeBytes = enc.encode(text).length;
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+
+      await persistVaultBlob(vault, id, blob);
+      await persistExtractedText(vault, id, text);
+      const entries = await loadManifest(vault);
+      entries.push({
+        id,
+        name,
+        tag,
+        kind: "text",
+        createdAt,
+        sizeBytes,
+        mimeType: "text/plain",
+      });
+      await saveManifest(vault, entries);
+
+      const row = {
+        id,
+        name,
+        tag,
+        kind: "text",
+        date: formatDate(createdAt),
+        size: formatBytes(sizeBytes),
+        source: "local",
+        createdAt,
+        sizeBytes,
+      };
+      setDocs((prev) => mergeDocs(prev, [row]));
+      setContentById((prev) => ({ ...prev, [id]: text }));
+      showToast("Text note saved");
+    } catch (err) {
+      console.error(err);
+      setIngestError(err?.message || "Could not save note.");
+    } finally {
+      setIngestBusy(false);
+    }
+  }, [ensureVault, showToast]);
 
   // ── Press handlers (tap vs long-press) ──
   const handlePointerDown = useCallback((doc, e) => {
@@ -651,7 +897,7 @@ export default function Silo() {
     if (action === "Download") {
       (async () => {
         if (doc.source === "local" && vaultRef.current) {
-          const f = await readVaultPdfFile(vaultRef.current, String(doc.id));
+          const f = await readVaultBlobFile(vaultRef.current, String(doc.id));
           if (f) {
             const url = URL.createObjectURL(f);
             const a = document.createElement("a");
@@ -679,10 +925,14 @@ export default function Silo() {
       );
     } else {
       const boost = typeof docId === "number" ? (DEMO_INDEX_BOOST[docId] || "") : "";
-      const base = newName.replace(/\.pdf$/i, "").replace(/_/g, " ");
+      const nm = newName.replace(/\.(pdf|txt)$/i, "").replace(/_/g, " ");
+      const bodyFromDemo = renamedDoc.kind === "text" && typeof docId === "number" && DEMO_TEXT_BODY[docId]
+        ? DEMO_TEXT_BODY[docId]
+        : "";
+      const body = bodyFromDemo || `${nm} ${renamedDoc.tag} ${boost}`.trim();
       setContentById((prev) => ({
         ...prev,
-        [docId]: `${base} ${renamedDoc.tag} ${boost}`.trim(),
+        [docId]: body,
       }));
     }
     setRenameDoc(null);
@@ -754,7 +1004,7 @@ export default function Silo() {
             Your
           </span>
           <span style={{ fontSize: 10, color: "#3A3A38", textTransform: "uppercase", letterSpacing: "0.12em" }}>
-            {docs.length} files
+            {docs.length} items
           </span>
         </div>
 
@@ -764,7 +1014,7 @@ export default function Silo() {
           alignItems: "baseline", lineHeight: 1, marginTop: 2,
         }}>
           <em style={{ fontSize: 38, fontStyle: "italic", fontWeight: 300, color: "#848480", letterSpacing: "-0.05em" }}>
-            documents.
+            vault.
           </em>
           <span style={{ fontSize: 10, color: "#3A3A38", textTransform: "uppercase", letterSpacing: "0.12em" }}>
             {totalGB} GB total
@@ -774,16 +1024,16 @@ export default function Silo() {
 
       <div style={{ padding: "0 28px 16px", display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
         <input
-          ref={uploadInputRef}
+          ref={vaultFileInputRef}
           type="file"
-          accept="application/pdf"
+          accept=".pdf,.m4a,.aac,.mp3,.wav,.webm,.ogg,.opus,.flac,application/pdf,audio/*"
           style={{ display: "none" }}
           aria-hidden="true"
-          onChange={(e) => { void handlePdfFiles(e.target.files); }}
+          onChange={(e) => { void handleVaultFiles(e.target.files); }}
         />
         <button
           type="button"
-          onClick={handlePickPdf}
+          onClick={handlePickVaultFile}
           disabled={ingestBusy}
           style={{
             padding: "10px 18px",
@@ -797,10 +1047,28 @@ export default function Silo() {
             letterSpacing: "0.04em",
           }}
         >
-          {ingestBusy ? "Indexing…" : "+ Add PDF (local)"}
+          {ingestBusy ? "Saving…" : "+ Add file"}
         </button>
-        <span style={{ fontSize: 9, color: "#3A3A38", letterSpacing: "0.06em" }}>
-          {opfsReady ? "OPFS vault ready" : "OPFS unavailable — demo only"}
+        <button
+          type="button"
+          onClick={() => setNoteModalOpen(true)}
+          disabled={ingestBusy}
+          style={{
+            padding: "10px 18px",
+            borderRadius: 20,
+            border: "1px solid #2a3a38",
+            background: "rgba(91,200,196,0.08)",
+            color: ingestBusy ? "#3A3A38" : "#5BC8C4",
+            fontSize: 11,
+            cursor: ingestBusy ? "wait" : "pointer",
+            fontFamily: "var(--mono)",
+            letterSpacing: "0.04em",
+          }}
+        >
+          Text note
+        </button>
+        <span style={{ fontSize: 9, color: "#3A3A38", letterSpacing: "0.06em", flex: "1 1 140px" }}>
+          {opfsReady ? "PDF · voice · paste like “message to self”" : "OPFS unavailable — demo only"}
         </span>
       </div>
       {ingestError && (
@@ -833,7 +1101,7 @@ export default function Silo() {
             exit={{ opacity: 0, height: 0 }}
             style={{ padding: "12px 28px 0", fontSize: 10, color: "#848480" }}
           >
-            Full-text search (name + extracted text) for "{query}"
+            Full-text search (titles + message / PDF text) for "{query}"
           </motion.div>
         )}
       </AnimatePresence>
@@ -867,7 +1135,7 @@ export default function Silo() {
               <motion.div layout key={tag} style={{ marginBottom: 30 }}>
                 <div style={{
                   padding: "0 28px", fontSize: 10,
-                  color: TAG_META[tag].color,
+                  color: tagMeta(tag).color,
                   letterSpacing: "0.2em", marginBottom: 12, textTransform: "uppercase",
                 }}>
                   {tag}
@@ -892,12 +1160,14 @@ export default function Silo() {
                     >
                       <div style={{
                         width: 40, height: 48, borderRadius: 12, flexShrink: 0,
-                        background: TAG_META[doc.tag].bg, color: TAG_META[doc.tag].color,
-                        display: "flex", flexDirection: "column", justifyContent: "center", gap: 3, padding: 8,
+                        background: tagMeta(doc.tag).bg, color: tagMeta(doc.tag).color,
+                        display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: 2, padding: 6,
                       }}>
-                        <div style={{ height: 2, borderRadius: 1, background: "currentColor", width: "100%" }} />
-                        <div style={{ height: 2, borderRadius: 1, background: "currentColor", width: "60%", opacity: 0.5 }} />
-                        <div style={{ height: 2, borderRadius: 1, background: "currentColor", width: "85%", opacity: 0.8 }} />
+                        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.06em" }}>
+                          {kindLabel(doc.kind || "pdf")}
+                        </span>
+                        <div style={{ height: 2, borderRadius: 1, background: "currentColor", width: "100%", opacity: 0.35 }} />
+                        <div style={{ height: 2, borderRadius: 1, background: "currentColor", width: "55%", opacity: 0.25 }} />
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -948,6 +1218,15 @@ export default function Silo() {
       </div>
 
       {/* ── Overlays ── */}
+      <AnimatePresence>
+        {noteModalOpen && (
+          <NoteModal
+            onSave={(t) => { void handleSaveTextNote(t); }}
+            onCancel={() => setNoteModalOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {settingsOpen && <SettingsDrawer onClose={() => setSettingsOpen(false)} />}
       </AnimatePresence>
