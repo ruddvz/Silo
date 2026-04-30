@@ -1779,6 +1779,11 @@ export default function Silo() {
             {totalGB} GB total
           </span>
         </div>
+        {import.meta.env.BASE_URL !== "/" && (
+          <div style={{ marginTop: 10, fontSize: 9, color: "#5a5a58", letterSpacing: "0.08em" }}>
+            GitHub Pages · {import.meta.env.BASE_URL.replace(/\//g, "") || "root"}
+          </div>
+        )}
       </motion.div>
 
       <div style={{ padding: "0 28px 16px", display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
