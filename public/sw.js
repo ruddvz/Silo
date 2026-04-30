@@ -77,6 +77,8 @@ self.addEventListener("fetch", (event) => {
           text,
           url: shareUrl,
           files: fileMetas,
+          importAttempts: 0,
+          lastError: "",
         });
 
         return Response.redirect(`/?shareImport=${encodeURIComponent(id)}`, 303);

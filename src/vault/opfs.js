@@ -59,6 +59,7 @@ const MANIFEST = "manifest.json";
  *   storage?: VaultStorage,
  *   linkedPath?: string,
  *   contentHash?: string,
+ *   textFingerprint?: string,
  * }} VaultManifestEntry
  */
 
@@ -84,6 +85,7 @@ function normalizeEntry(raw) {
     storage: raw.storage === "linked" ? "linked" : "opfs",
     linkedPath: typeof raw.linkedPath === "string" ? raw.linkedPath : undefined,
     contentHash: typeof raw.contentHash === "string" ? raw.contentHash : undefined,
+    textFingerprint: typeof raw.textFingerprint === "string" ? raw.textFingerprint : undefined,
   };
 }
 
@@ -103,7 +105,7 @@ export async function loadManifest(vault) {
 
 /** @param {FileSystemDirectoryHandle} vault @param {VaultManifestEntry[]} entries */
 export async function saveManifest(vault, entries) {
-  const json = JSON.stringify({ version: 5, entries }, null, 0);
+  const json = JSON.stringify({ version: 6, entries }, null, 0);
   const blob = new Blob([json], { type: "application/json" });
   const handle = await vault.getFileHandle(MANIFEST, { create: true });
   const writable = await handle.createWritable();
@@ -187,6 +189,17 @@ export async function mergeManifestDeviceWins(vault, incoming) {
     byId.set(id, { ...prev, ...e, id });
   }
   await saveManifest(vault, Array.from(byId.values()));
+}
+
+/**
+ * @param {FileSystemDirectoryHandle} vault
+ * @param {string} id
+ * @param {(e: VaultManifestEntry) => VaultManifestEntry} updater
+ */
+export async function updateManifestEntry(vault, id, updater) {
+  const entries = await loadManifest(vault);
+  const next = entries.map((e) => (String(e.id) === String(id) ? updater(e) : e));
+  await saveManifest(vault, next);
 }
 
 /** @param {FileSystemDirectoryHandle} vault @param {string} id @returns {Promise<File | null>} */

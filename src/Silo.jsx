@@ -21,10 +21,13 @@ import {
 import { buildVaultSearchIndex } from "./vault/searchIndex.js";
 import { topMatchingDocIds } from "./vault/vectorSearch.js";
 import { mergeSearchIds } from "./vault/hybridSearch.js";
-import { removePendingShare, getAllPendingShares } from "./vault/shareQueue.js";
+import { removePendingShare, getAllPendingShares, recordShareImportFailure, clearAllPendingShares } from "./vault/shareQueue.js";
 import { buildVaultZip, parseVaultZip, applyVaultZipToOpfs } from "./vault/exportBackup.js";
 import { persistSecureText, decodeStoredText } from "./vault/secureText.js";
 import { sha256HexFromBlob } from "./vault/fileHash.js";
+import { textContentFingerprint } from "./vault/textFingerprint.js";
+import { checkVaultIntegrity } from "./vault/integrity.js";
+import { repairVaultEntry } from "./vault/repair.js";
 import { summarizeExtractive } from "./vault/summarize.js";
 
 // ─── Data ────────────────────────────────────────────────────────────────────
@@ -108,7 +111,7 @@ const SMART_VIEWS = [
   { id: "Voice",     label: "Voice",     match: (d) => (d.kind || "") === "audio" },
   { id: "Screenshots", label: "Shots",   match: (d, ctx) => (d.kind || "") === "image" || /screenshot|screen\s*shot/i.test(d.name + (ctx.contentById?.[d.id] || "")) },
   { id: "LowOCR",    label: "Low OCR",   match: (d, ctx) => (d.kind || "") === "image" && String(ctx.contentById?.[d.id] || "").trim().length < 24 },
-  { id: "Duplicates", label: "Dupes",   match: (d, ctx) => d.source === "local" && d.contentHash && ctx.duplicateHashes?.has(d.contentHash) },
+  { id: "Duplicates", label: "Dupes",   match: (d, ctx) => d.source === "local" && ((d.contentHash && ctx.duplicateHashes?.has(d.contentHash)) || (d.textFingerprint && ctx.duplicateFingerprints?.has(d.textFingerprint))) },
 ];
 
 function daysSince(iso) {
@@ -773,6 +776,17 @@ export default function Silo() {
     return dup;
   }, [docs]);
 
+  const duplicateFingerprints = useMemo(() => {
+    const counts = new Map();
+    for (const d of docs) {
+      if (d.source !== "local" || !d.textFingerprint) continue;
+      counts.set(d.textFingerprint, (counts.get(d.textFingerprint) || 0) + 1);
+    }
+    const dup = new Set();
+    for (const [h, c] of counts) if (c > 1) dup.add(h);
+    return dup;
+  }, [docs]);
+
   // ── Filtered display data ──
   const display = useMemo(() => {
     const q = query.trim();
@@ -794,7 +808,7 @@ export default function Silo() {
       if (!smartView) return true;
       const sv = SMART_VIEWS.find((s) => s.id === smartView);
       if (!sv) return true;
-      const ctx = { contentById, duplicateHashes };
+      const ctx = { contentById, duplicateHashes, duplicateFingerprints };
       return sv.match(d, ctx);
     });
     const tagOrder = Object.keys(TAG_META);
@@ -805,7 +819,7 @@ export default function Silo() {
       if (items.length) acc[tag] = items;
       return acc;
     }, {});
-  }, [docs, activeTag, query, searchIndex, embeddingsById, queryVec, smartView, contentById, duplicateHashes]);
+  }, [docs, activeTag, query, searchIndex, embeddingsById, queryVec, smartView, contentById, duplicateHashes, duplicateFingerprints]);
 
   const hasResults = Object.keys(display).length > 0;
 
@@ -890,6 +904,13 @@ export default function Silo() {
     vaultFileInputRef.current?.click();
   }, []);
 
+  const isDuplicateContent = useCallback(async (vault, { contentHash, textFingerprint }) => {
+    const existing = await loadManifest(vault);
+    if (contentHash && existing.some((e) => e.contentHash === contentHash)) return true;
+    if (textFingerprint && existing.some((e) => e.textFingerprint === textFingerprint)) return true;
+    return false;
+  }, []);
+
   const ingestFromFile = useCallback(async (file, options) => {
     const { vault, storage, fileHandle } = options;
     const lower = file.name.toLowerCase();
@@ -904,12 +925,9 @@ export default function Silo() {
     } catch {
       contentHash = "";
     }
-    if (contentHash) {
-      const existing = await loadManifest(vault);
-      if (existing.some((e) => e.contentHash === contentHash)) {
-        showToast("Already in vault (same file hash)");
-        return;
-      }
+    if (contentHash && (await isDuplicateContent(vault, { contentHash, textFingerprint: "" }))) {
+      showToast("Already in vault (same file hash)");
+      return false;
     }
 
     const id = crypto.randomUUID();
@@ -934,6 +952,17 @@ export default function Silo() {
       indexText = `file attachment ${file.type || "binary"} ${file.name}`;
     }
 
+    let textFingerprint = "";
+    try {
+      textFingerprint = await textContentFingerprint(indexText);
+    } catch {
+      textFingerprint = "";
+    }
+    if (textFingerprint && (await isDuplicateContent(vault, { contentHash: "", textFingerprint }))) {
+      showToast("Already in vault (same text)");
+      return false;
+    }
+
     const tag = inferTagGuess(`${indexText} ${file.name}`);
     if (storage === "opfs") {
       await persistVaultBlob(vault, id, file);
@@ -953,6 +982,7 @@ export default function Silo() {
       createdAt,
       sizeBytes: file.size,
       ...(contentHash ? { contentHash } : {}),
+      ...(textFingerprint ? { textFingerprint } : {}),
     };
     await indexAndPersistEmbedding(vault, id, row, indexText);
 
@@ -968,6 +998,7 @@ export default function Silo() {
       storage,
       ...(storage === "linked" && fileHandle?.name ? { linkedPath: fileHandle.name } : {}),
       ...(contentHash ? { contentHash } : {}),
+      ...(textFingerprint ? { textFingerprint } : {}),
     };
     entries.push(entry);
     await saveManifest(vault, entries);
@@ -984,7 +1015,8 @@ export default function Silo() {
               ? "Image OCR & indexed"
               : "File saved to vault",
     );
-  }, [indexAndPersistEmbedding, showToast]);
+    return true;
+  }, [indexAndPersistEmbedding, showToast, isDuplicateContent]);
 
   const handleVaultFiles = useCallback(async (fileList) => {
     const file = fileList?.[0];
@@ -1063,13 +1095,16 @@ export default function Silo() {
       } catch {
         contentHash = "";
       }
-      if (contentHash) {
-        const existing = await loadManifest(vault);
-        if (existing.some((e) => e.contentHash === contentHash)) {
-          showToast("Same note already saved");
-          setIngestBusy(false);
-          return;
-        }
+      let textFingerprint = "";
+      try {
+        textFingerprint = await textContentFingerprint(text);
+      } catch {
+        textFingerprint = "";
+      }
+      if (await isDuplicateContent(vault, { contentHash, textFingerprint })) {
+        showToast("Same note already saved");
+        setIngestBusy(false);
+        return;
       }
 
       await persistVaultBlob(vault, id, blob);
@@ -1084,6 +1119,7 @@ export default function Silo() {
         createdAt,
         sizeBytes,
         ...(contentHash ? { contentHash } : {}),
+        ...(textFingerprint ? { textFingerprint } : {}),
       };
       await indexAndPersistEmbedding(vault, id, row, text);
 
@@ -1097,6 +1133,7 @@ export default function Silo() {
         sizeBytes,
         mimeType: "text/plain",
         ...(contentHash ? { contentHash } : {}),
+        ...(textFingerprint ? { textFingerprint } : {}),
       });
       await saveManifest(vault, entries);
 
@@ -1108,7 +1145,7 @@ export default function Silo() {
     } finally {
       setIngestBusy(false);
     }
-  }, [ensureVault, showToast, indexAndPersistEmbedding]);
+  }, [ensureVault, showToast, indexAndPersistEmbedding, isDuplicateContent]);
 
   const processAllPendingShares = useCallback(async () => {
     const vault = await ensureVault();
@@ -1119,41 +1156,79 @@ export default function Silo() {
     let ok = 0;
     try {
       for (const rec of all) {
+        let succeeded = false;
+        let lastErr = null;
         try {
-          for (const fm of rec.files || []) {
-            const buf = new Uint8Array(fm.buffer);
-            const file = new File([buf], fm.name || "shared", { type: fm.type || "application/octet-stream" });
-            await ingestFromFile(file, { vault, storage: "opfs", fileHandle: null });
-            ok++;
-          }
-          const noteBody = [rec.title, rec.text, rec.url].filter(Boolean).join("\n").trim();
-          if (noteBody) {
-            const id = crypto.randomUUID();
-            const createdAt = new Date().toISOString();
-            const name = `Shared — ${noteBody.slice(0, 32)}${noteBody.length > 32 ? "…" : ""}.txt`;
-            const tag = inferTagForNote(noteBody);
-            const blob = new Blob([noteBody], { type: "text/plain;charset=utf-8" });
-            let h = "";
-            try { h = await sha256HexFromBlob(blob); } catch { h = ""; }
-            const manifest = await loadManifest(vault);
-            if (!h || !manifest.some((e) => e.contentHash === h)) {
-              await persistVaultBlob(vault, id, blob);
-              const row = {
-                id, name, tag, kind: "text", storage: "opfs",
-                date: formatDate(createdAt), size: formatBytes(blob.size), source: "local", createdAt, sizeBytes: blob.size,
-                ...(h ? { contentHash: h } : {}),
-              };
-              await indexAndPersistEmbedding(vault, id, row, noteBody);
-              const entries = await loadManifest(vault);
-              entries.push({ id, name, tag, kind: "text", createdAt, sizeBytes: blob.size, mimeType: "text/plain", storage: "opfs", ...(h ? { contentHash: h } : {}) });
-              await saveManifest(vault, entries);
-              setDocs((prev) => mergeDocs(prev, [row]));
-              ok++;
+          const files = rec.files || [];
+          let fileAdded = 0;
+          for (const fm of files) {
+            try {
+              const buf = new Uint8Array(fm.buffer);
+              const file = new File([buf], fm.name || "shared", { type: fm.type || "application/octet-stream" });
+              const added = await ingestFromFile(file, { vault, storage: "opfs", fileHandle: null });
+              if (added) fileAdded++;
+            } catch (e) {
+              lastErr = e;
             }
           }
-          await removePendingShare(rec.id);
+          if (fileAdded > 0) succeeded = true;
+          if (files.length > 0 && fileAdded === 0 && !lastErr) succeeded = true;
+
+          const noteBody = [rec.title, rec.text, rec.url].filter(Boolean).join("\n").trim();
+          if (noteBody) {
+            try {
+              const blob = new Blob([noteBody], { type: "text/plain;charset=utf-8" });
+              let h = "";
+              try { h = await sha256HexFromBlob(blob); } catch { h = ""; }
+              let tf = "";
+              try { tf = await textContentFingerprint(noteBody); } catch { tf = ""; }
+              if (await isDuplicateContent(vault, { contentHash: h, textFingerprint: tf })) {
+                succeeded = true;
+              } else {
+                const id = crypto.randomUUID();
+                const createdAt = new Date().toISOString();
+                const name = `Shared — ${noteBody.slice(0, 32)}${noteBody.length > 32 ? "…" : ""}.txt`;
+                const tag = inferTagForNote(noteBody);
+                await persistVaultBlob(vault, id, blob);
+                const row = {
+                  id, name, tag, kind: "text", storage: "opfs",
+                  date: formatDate(createdAt), size: formatBytes(blob.size), source: "local", createdAt, sizeBytes: blob.size,
+                  ...(h ? { contentHash: h } : {}),
+                  ...(tf ? { textFingerprint: tf } : {}),
+                };
+                await indexAndPersistEmbedding(vault, id, row, noteBody);
+                const entries = await loadManifest(vault);
+                entries.push({
+                  id, name, tag, kind: "text", createdAt, sizeBytes: blob.size, mimeType: "text/plain", storage: "opfs",
+                  ...(h ? { contentHash: h } : {}),
+                  ...(tf ? { textFingerprint: tf } : {}),
+                });
+                await saveManifest(vault, entries);
+                setDocs((prev) => mergeDocs(prev, [row]));
+                succeeded = true;
+              }
+            } catch (e) {
+              lastErr = e;
+            }
+          }
+
+          if (!files.length && !noteBody) succeeded = true;
+
+          if (succeeded) {
+            await removePendingShare(rec.id);
+            ok++;
+          } else if (lastErr) {
+            throw lastErr;
+          }
         } catch (e) {
           console.error("share row", e);
+          const n = await recordShareImportFailure(rec.id, e?.message || String(e));
+          if (n >= 5) {
+            await removePendingShare(rec.id);
+            showToast("Dropped share after 5 failed imports");
+          } else {
+            showToast(`Share import failed (${n}/5)`);
+          }
         }
       }
       void refreshShareQueueCount();
@@ -1165,7 +1240,7 @@ export default function Silo() {
     } finally {
       setIngestBusy(false);
     }
-  }, [ensureVault, ingestFromFile, indexAndPersistEmbedding, refreshShareQueueCount, showToast]);
+  }, [ensureVault, ingestFromFile, indexAndPersistEmbedding, refreshShareQueueCount, showToast, isDuplicateContent]);
 
   useEffect(() => {
     if (!opfsReady) return;
@@ -1275,6 +1350,60 @@ export default function Silo() {
     }
   }, [ensureVault, showToast]);
 
+  const handleCheckVaultIntegrity = useCallback(async () => {
+    const vault = vaultRef.current;
+    if (!vault) {
+      showToast("No vault");
+      return;
+    }
+    const entries = await loadManifest(vault);
+    if (!entries.length) {
+      showToast("No local entries");
+      return;
+    }
+    const issues = await checkVaultIntegrity(vault, entries);
+    if (!issues.length) showToast("Vault integrity OK");
+    else {
+      showToast(
+        `${issues.length} issue(s): ${issues.slice(0, 3).map((i) => i.code).join(", ")}${issues.length > 3 ? "…" : ""}`,
+      );
+    }
+  }, [showToast]);
+
+  const handleRepairVault = useCallback(async () => {
+    const vault = vaultRef.current;
+    if (!vault) {
+      showToast("No vault");
+      return;
+    }
+    const entries = await loadManifest(vault);
+    if (!entries.length) return;
+    setIngestBusy(true);
+    try {
+      for (const e of entries) {
+        await repairVaultEntry(
+          vault,
+          e,
+          () => resolveLocalFile({ id: e.id, storage: e.storage || "opfs" }),
+          vaultPassphrase,
+        );
+      }
+      setVaultEpoch((x) => x + 1);
+      showToast("Repair pass complete — reindexed from blobs");
+    } catch (err) {
+      console.error(err);
+      showToast("Repair failed");
+    } finally {
+      setIngestBusy(false);
+    }
+  }, [resolveLocalFile, vaultPassphrase, showToast]);
+
+  const handleClearShareQueue = useCallback(async () => {
+    await clearAllPendingShares();
+    void refreshShareQueueCount();
+    showToast("Cleared pending shares");
+  }, [refreshShareQueueCount, showToast]);
+
   const settingsActions = useMemo(() => [
     { id: "export", label: "Export backup (.zip)", icon: "↑", onSelect: () => { void handleExportVaultZip(); } },
     { id: "import", label: "Import / merge backup", icon: "↓", onSelect: () => { backupImportRef.current?.click(); } },
@@ -1285,6 +1414,9 @@ export default function Silo() {
       disabled: !supportsDirectoryPicker(),
       onSelect: () => { void handleImportFolderFromDisk(); },
     },
+    { id: "integrity", label: "Check vault integrity", icon: "✓", onSelect: () => { void handleCheckVaultIntegrity(); } },
+    { id: "repair", label: "Repair vault (rebuild text/embeddings)", icon: "↻", onSelect: () => { void handleRepairVault(); } },
+    { id: "clearshares", label: "Clear pending shares queue", icon: "⊘", onSelect: () => { void handleClearShareQueue(); } },
     {
       id: "pass",
       label: "Set vault passphrase (encrypts index text)",
@@ -1352,7 +1484,16 @@ export default function Silo() {
       icon: "▣",
       onSelect: () => { window.open("/native/TWA.md", "_blank", "noopener,noreferrer"); },
     },
-  ], [handleExportVaultZip, handleImportFolderFromDisk, rewrapAllVaultText, vaultPassphrase, showToast]);
+  ], [
+    handleExportVaultZip,
+    handleImportFolderFromDisk,
+    handleCheckVaultIntegrity,
+    handleRepairVault,
+    handleClearShareQueue,
+    rewrapAllVaultText,
+    vaultPassphrase,
+    showToast,
+  ]);
 
   const handlePointerDown = useCallback((doc, e) => {
     e.preventDefault();

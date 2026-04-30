@@ -16,7 +16,12 @@ export async function buildVaultZip(vault, entries, getFileForEntry) {
   /** @type {Record<string, Uint8Array>} */
   const files = {};
 
-  const manifestText = JSON.stringify({ version: 5, exportedAt: new Date().toISOString(), entries }, null, 2);
+  const manifestText = JSON.stringify({
+    exportSchemaVersion: 1,
+    siloManifestVersion: 6,
+    exportedAt: new Date().toISOString(),
+    entries,
+  }, null, 2);
   files["manifest.json"] = new TextEncoder().encode(manifestText);
 
   for (const e of entries) {
@@ -86,7 +91,9 @@ export function parseVaultZip(zipBytes) {
   let manifest = null;
   if (manifestRaw) {
     try {
-      manifest = JSON.parse(strFromU8(manifestRaw));
+      const parsed = JSON.parse(strFromU8(manifestRaw));
+      if (parsed.entries && Array.isArray(parsed.entries)) manifest = parsed;
+      else if (parsed.version && parsed.entries) manifest = parsed;
     } catch {
       manifest = null;
     }

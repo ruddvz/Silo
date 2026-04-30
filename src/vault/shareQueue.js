@@ -16,7 +16,7 @@ function openDb() {
   });
 }
 
-/** @returns {Promise<Array<{ id: string, createdAt: string, title: string, text: string, url: string, files: Array<{ name: string, type: string, buffer: number[] }> }>>} */
+/** @returns {Promise<Array<Record<string, unknown>>>} */
 export async function getAllPendingShares() {
   const db = await openDb();
   return new Promise((resolve, reject) => {
@@ -36,4 +36,40 @@ export async function removePendingShare(id) {
     tx.onerror = () => reject(tx.error);
     tx.objectStore(STORE).delete(id);
   });
+}
+
+/**
+ * @param {string} id
+ * @param {string} errorMessage
+ * @returns {Promise<number>} new attempt count
+ */
+export async function recordShareImportFailure(id, errorMessage) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    const st = tx.objectStore(STORE);
+    const g = st.get(id);
+    g.onerror = () => reject(g.error);
+    g.onsuccess = () => {
+      const cur = g.result;
+      if (!cur) {
+        resolve(0);
+        return;
+      }
+      const n = (cur.importAttempts || 0) + 1;
+      st.put({
+        ...cur,
+        importAttempts: n,
+        lastError: String(errorMessage || "error").slice(0, 400),
+      });
+      resolve(n);
+    };
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/** Clear all pending shares (e.g. after repeated failures user gives up). */
+export async function clearAllPendingShares() {
+  const all = await getAllPendingShares();
+  await Promise.all(all.map((r) => removePendingShare(r.id)));
 }
