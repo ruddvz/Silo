@@ -21,6 +21,15 @@ The repo includes **Deploy to GitHub Pages** (`.github/workflows/deploy-pages.ym
 
 The site URL is shown on the successful workflow run (and under **Settings → Pages**).
 
+### If the workflow fails on “Deploy to GitHub Pages”
+
+A **`HttpError: Not Found`** (or “Creating Pages deployment failed”) almost always means **Pages is not wired to Actions yet** (or was still saving). Fix:
+
+1. **Settings → Pages → Build and deployment → Source** must be **GitHub Actions** (not “Deploy from a branch”).
+2. Save, wait a few seconds, then **re-run the failed workflow** (or push an empty commit).
+
+The **build** job can succeed while **deploy** fails until that setting is correct.
+
 ### Try the same build locally (subpath)
 
 Replace `Silo` with your repo name if different:

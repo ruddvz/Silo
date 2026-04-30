@@ -1,5 +1,5 @@
 # Build and deploy the Vite app to GitHub Pages (project site: /<repo>/).
-# Enable: Settings → Pages → Source: GitHub Actions.
+# Enable: Settings → Pages → Source: GitHub Actions (required or deploy step returns 404).
 name: Deploy to GitHub Pages
 
 on:
@@ -35,7 +35,7 @@ jobs:
           npm ci
           npm run build
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: dist
 
@@ -47,4 +47,4 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
