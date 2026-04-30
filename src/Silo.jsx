@@ -5,7 +5,6 @@ import {
   loadManifest,
   saveManifest,
   persistVaultBlob,
-  persistExtractedText,
   loadExtractedText,
   deleteVaultItem,
   readVaultBlobFile,
@@ -22,6 +21,11 @@ import {
 import { buildVaultSearchIndex } from "./vault/searchIndex.js";
 import { topMatchingDocIds } from "./vault/vectorSearch.js";
 import { mergeSearchIds } from "./vault/hybridSearch.js";
+import { removePendingShare, getAllPendingShares } from "./vault/shareQueue.js";
+import { buildVaultZip, parseVaultZip, applyVaultZipToOpfs } from "./vault/exportBackup.js";
+import { persistSecureText, decodeStoredText } from "./vault/secureText.js";
+import { sha256HexFromBlob } from "./vault/fileHash.js";
+import { summarizeExtractive } from "./vault/summarize.js";
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -99,13 +103,23 @@ function buildCombinedIndexText(doc, content) {
   return `${base} ${content || ""}`.trim();
 }
 
-const SETTINGS_OPTIONS = [
-  { label: "Sort by name",    icon: "↑↓" },
-  { label: "Sort by date",    icon: "📅" },
-  { label: "Compact view",    icon: "⊟"  },
-  { label: "Export all",      icon: "↑"  },
-  { label: "Lock vault",      icon: "🔒" },
+const SMART_VIEWS = [
+  { id: "Recent",    label: "Recent",    match: (d) => daysSince(d.createdAt) <= 7 },
+  { id: "Voice",     label: "Voice",     match: (d) => (d.kind || "") === "audio" },
+  { id: "Screenshots", label: "Shots",   match: (d, ctx) => (d.kind || "") === "image" || /screenshot|screen\s*shot/i.test(d.name + (ctx.contentById?.[d.id] || "")) },
+  { id: "LowOCR",    label: "Low OCR",   match: (d, ctx) => (d.kind || "") === "image" && String(ctx.contentById?.[d.id] || "").trim().length < 24 },
+  { id: "Duplicates", label: "Dupes",   match: (d, ctx) => d.source === "local" && d.contentHash && ctx.duplicateHashes?.has(d.contentHash) },
 ];
+
+function daysSince(iso) {
+  const t = new Date(iso || 0).getTime();
+  if (!Number.isFinite(t)) return 999;
+  return (Date.now() - t) / (86400 * 1000);
+}
+
+function supportsDirectoryPicker() {
+  return typeof window !== "undefined" && typeof window.showDirectoryPicker === "function";
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -375,7 +389,7 @@ function NoteModal({ onSave, onCancel }) {
   );
 }
 
-function SettingsDrawer({ onClose }) {
+function SettingsDrawer({ onClose, actions }) {
   const firstRef = useRef(null);
   useEffect(() => {
     firstRef.current?.focus();
@@ -405,18 +419,21 @@ function SettingsDrawer({ onClose }) {
       >
         <div style={{ width: 36, height: 4, background: "#2a2a2a", borderRadius: 2, margin: "0 auto 20px" }} />
         <div style={{ fontSize: 11, color: "#848480", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 16 }}>
-          Settings
+          Vault tools
         </div>
-        {SETTINGS_OPTIONS.map((opt, i) => (
+        {actions.map((opt, i) => (
           <button
-            key={opt.label}
+            key={opt.id}
             ref={i === 0 ? firstRef : null}
-            onClick={onClose}
+            type="button"
+            disabled={opt.disabled}
+            onClick={() => { opt.onSelect?.(); onClose(); }}
             style={{
               display: "flex", justifyContent: "space-between", alignItems: "center",
               width: "100%", padding: "14px 0", background: "transparent",
-              border: "none", borderBottom: i < SETTINGS_OPTIONS.length - 1 ? "1px solid #1A1A1A" : "none",
-              color: "#EDECEA", fontSize: 14, cursor: "pointer",
+              border: "none", borderBottom: i < actions.length - 1 ? "1px solid #1A1A1A" : "none",
+              color: opt.danger ? "#C86E8A" : opt.disabled ? "#3A3A38" : "#EDECEA",
+              fontSize: 14, cursor: opt.disabled ? "not-allowed" : "pointer",
               fontFamily: "'JetBrains Mono', monospace", textAlign: "left",
             }}
           >
@@ -440,6 +457,7 @@ function ContextMenu({ doc, onAction, onClose }) {
   }, [onClose]);
 
   const actions = [
+    { label: "Summarize", icon: "≡", danger: false },
     { label: "Share",    icon: "↑", danger: false },
     { label: "Download", icon: "↓", danger: false },
     { label: "Rename",   icon: "✎", danger: false },
@@ -519,6 +537,10 @@ export default function Silo() {
   const [renameDoc,     setRenameDoc]     = useState(null);
   const [settingsOpen,  setSettingsOpen]  = useState(false);
   const [toast,         setToast]         = useState(null);
+  const [vaultPassphrase, setVaultPassphrase] = useState(() => sessionStorage.getItem("silo_vault_pass") || "");
+  const [smartView,     setSmartView]     = useState("");
+  const [importQueueCount, setImportQueueCount] = useState(0);
+  const [vaultEpoch, setVaultEpoch] = useState(0);
 
   const pressTimer       = useRef(null);
   const blurTimer        = useRef(null);
@@ -526,12 +548,33 @@ export default function Silo() {
   const styleInjected    = useRef(false);
   const vaultRef         = useRef(null);
   const vaultFileInputRef = useRef(null);
+  const backupImportRef = useRef(null);
+
+  useEffect(() => {
+    if (vaultPassphrase) sessionStorage.setItem("silo_vault_pass", vaultPassphrase);
+    else sessionStorage.removeItem("silo_vault_pass");
+  }, [vaultPassphrase]);
+
+  const refreshShareQueueCount = useCallback(async () => {
+    try {
+      const all = await getAllPendingShares();
+      setImportQueueCount(all.length);
+    } catch {
+      setImportQueueCount(0);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshShareQueueCount();
+    const id = setInterval(() => { void refreshShareQueueCount(); }, 5000);
+    return () => clearInterval(id);
+  }, [refreshShareQueueCount]);
 
   useEffect(() => {
     setNativeLinkReady(supportsNativeFileSystemLink());
   }, []);
+
   useEffect(() => {
-    if (styleInjected.current) return;
     styleInjected.current = true;
 
     const link = document.createElement("link");
@@ -632,13 +675,15 @@ export default function Silo() {
       const localRows = [];
       const contentUpdates = {};
       for (const e of entries) {
-        const txt = await loadExtractedText(vault, e.id);
+        const raw = await loadExtractedText(vault, e.id);
+        const txt = await decodeStoredText(raw ?? "", vaultPassphrase);
         localRows.push({
           id: e.id,
           name: e.name,
           tag: e.tag,
           kind: e.kind || "pdf",
           storage: e.storage || "opfs",
+          contentHash: e.contentHash,
           date: formatDate(e.createdAt),
           size: formatBytes(e.sizeBytes),
           source: "local",
@@ -657,7 +702,7 @@ export default function Silo() {
       setEmbeddingsById((prev) => ({ ...prev, ...embMap }));
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [vaultPassphrase, vaultEpoch]);
 
   const searchIndex = useMemo(() => {
     const rows = docs.map((d) => ({
@@ -717,6 +762,17 @@ export default function Silo() {
     };
   }, [query]);
 
+  const duplicateHashes = useMemo(() => {
+    const counts = new Map();
+    for (const d of docs) {
+      if (d.source !== "local" || !d.contentHash) continue;
+      counts.set(d.contentHash, (counts.get(d.contentHash) || 0) + 1);
+    }
+    const dup = new Set();
+    for (const [h, c] of counts) if (c > 1) dup.add(h);
+    return dup;
+  }, [docs]);
+
   // ── Filtered display data ──
   const display = useMemo(() => {
     const q = query.trim();
@@ -734,7 +790,12 @@ export default function Silo() {
     const filtered = docs.filter((d) => {
       const tagOk = activeTag === "All" || d.tag === activeTag;
       const idOk = idSet == null || idSet.has(String(d.id));
-      return tagOk && idOk;
+      if (!tagOk || !idOk) return false;
+      if (!smartView) return true;
+      const sv = SMART_VIEWS.find((s) => s.id === smartView);
+      if (!sv) return true;
+      const ctx = { contentById, duplicateHashes };
+      return sv.match(d, ctx);
     });
     const tagOrder = Object.keys(TAG_META);
     const extra = [...new Set(filtered.map((d) => d.tag))].filter((t) => !TAG_META[t]).sort();
@@ -744,7 +805,7 @@ export default function Silo() {
       if (items.length) acc[tag] = items;
       return acc;
     }, {});
-  }, [docs, activeTag, query, searchIndex, embeddingsById, queryVec]);
+  }, [docs, activeTag, query, searchIndex, embeddingsById, queryVec, smartView, contentById, duplicateHashes]);
 
   const hasResults = Object.keys(display).length > 0;
 
@@ -759,14 +820,14 @@ export default function Silo() {
   }, [docs]);
 
   const indexAndPersistEmbedding = useCallback(async (vault, id, docRow, indexText) => {
-    await persistExtractedText(vault, id, indexText);
+    await persistSecureText(vault, id, indexText, vaultPassphrase);
     const combined = buildCombinedIndexText(docRow, indexText);
     const { embedText } = await import("./vault/embeddings.js");
     const vec = await embedText(combined);
     await persistEmbedding(vault, id, vec);
     setContentById((prev) => ({ ...prev, [id]: indexText }));
     setEmbeddingsById((prev) => ({ ...prev, [String(id)]: vec }));
-  }, []);
+  }, [vaultPassphrase]);
 
   const resolveLocalFile = useCallback(async (doc) => {
     if (doc.storage === "linked") {
@@ -794,7 +855,8 @@ export default function Silo() {
       if (k === "text") {
         let body = contentById[doc.id];
         if (body == null || body === "") {
-          body = (await loadExtractedText(vaultRef.current, String(doc.id))) ?? "";
+          const raw = (await loadExtractedText(vaultRef.current, String(doc.id))) ?? "";
+          body = await decodeStoredText(raw, vaultPassphrase);
         }
         showToast(body ? `Note: ${body.slice(0, 120)}${body.length > 120 ? "…" : ""}` : "Empty note");
         return;
@@ -813,7 +875,7 @@ export default function Silo() {
       }
     }
     showToast(`Opening ${doc.name}…`);
-  }, [showToast, contentById, resolveLocalFile]);
+  }, [showToast, contentById, resolveLocalFile, vaultPassphrase]);
 
   const ensureVault = useCallback(async () => {
     let v = vaultRef.current;
@@ -835,6 +897,20 @@ export default function Silo() {
     if (lower.endsWith(".pdf")) kind = "pdf";
     else if (/\.(png|jpe?g|gif|webp|bmp|heic|heif)$/i.test(lower)) kind = "image";
     else if (/\.(m4a|aac|mp3|wav|webm|ogg|opus|flac)$/i.test(lower)) kind = "audio";
+
+    let contentHash = "";
+    try {
+      contentHash = await sha256HexFromBlob(file);
+    } catch {
+      contentHash = "";
+    }
+    if (contentHash) {
+      const existing = await loadManifest(vault);
+      if (existing.some((e) => e.contentHash === contentHash)) {
+        showToast("Already in vault (same file hash)");
+        return;
+      }
+    }
 
     const id = crypto.randomUUID();
     const createdAt = new Date().toISOString();
@@ -876,6 +952,7 @@ export default function Silo() {
       source: "local",
       createdAt,
       sizeBytes: file.size,
+      ...(contentHash ? { contentHash } : {}),
     };
     await indexAndPersistEmbedding(vault, id, row, indexText);
 
@@ -890,6 +967,7 @@ export default function Silo() {
       mimeType: file.type || undefined,
       storage,
       ...(storage === "linked" && fileHandle?.name ? { linkedPath: fileHandle.name } : {}),
+      ...(contentHash ? { contentHash } : {}),
     };
     entries.push(entry);
     await saveManifest(vault, entries);
@@ -979,6 +1057,20 @@ export default function Silo() {
       const enc = new TextEncoder();
       const sizeBytes = enc.encode(text).length;
       const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      let contentHash = "";
+      try {
+        contentHash = await sha256HexFromBlob(blob);
+      } catch {
+        contentHash = "";
+      }
+      if (contentHash) {
+        const existing = await loadManifest(vault);
+        if (existing.some((e) => e.contentHash === contentHash)) {
+          showToast("Same note already saved");
+          setIngestBusy(false);
+          return;
+        }
+      }
 
       await persistVaultBlob(vault, id, blob);
       const row = {
@@ -991,6 +1083,7 @@ export default function Silo() {
         source: "local",
         createdAt,
         sizeBytes,
+        ...(contentHash ? { contentHash } : {}),
       };
       await indexAndPersistEmbedding(vault, id, row, text);
 
@@ -1003,6 +1096,7 @@ export default function Silo() {
         createdAt,
         sizeBytes,
         mimeType: "text/plain",
+        ...(contentHash ? { contentHash } : {}),
       });
       await saveManifest(vault, entries);
 
@@ -1015,6 +1109,251 @@ export default function Silo() {
       setIngestBusy(false);
     }
   }, [ensureVault, showToast, indexAndPersistEmbedding]);
+
+  const processAllPendingShares = useCallback(async () => {
+    const vault = await ensureVault();
+    if (!vault) return;
+    const all = await getAllPendingShares();
+    if (!all.length) return;
+    setIngestBusy(true);
+    let ok = 0;
+    try {
+      for (const rec of all) {
+        try {
+          for (const fm of rec.files || []) {
+            const buf = new Uint8Array(fm.buffer);
+            const file = new File([buf], fm.name || "shared", { type: fm.type || "application/octet-stream" });
+            await ingestFromFile(file, { vault, storage: "opfs", fileHandle: null });
+            ok++;
+          }
+          const noteBody = [rec.title, rec.text, rec.url].filter(Boolean).join("\n").trim();
+          if (noteBody) {
+            const id = crypto.randomUUID();
+            const createdAt = new Date().toISOString();
+            const name = `Shared — ${noteBody.slice(0, 32)}${noteBody.length > 32 ? "…" : ""}.txt`;
+            const tag = inferTagForNote(noteBody);
+            const blob = new Blob([noteBody], { type: "text/plain;charset=utf-8" });
+            let h = "";
+            try { h = await sha256HexFromBlob(blob); } catch { h = ""; }
+            const manifest = await loadManifest(vault);
+            if (!h || !manifest.some((e) => e.contentHash === h)) {
+              await persistVaultBlob(vault, id, blob);
+              const row = {
+                id, name, tag, kind: "text", storage: "opfs",
+                date: formatDate(createdAt), size: formatBytes(blob.size), source: "local", createdAt, sizeBytes: blob.size,
+                ...(h ? { contentHash: h } : {}),
+              };
+              await indexAndPersistEmbedding(vault, id, row, noteBody);
+              const entries = await loadManifest(vault);
+              entries.push({ id, name, tag, kind: "text", createdAt, sizeBytes: blob.size, mimeType: "text/plain", storage: "opfs", ...(h ? { contentHash: h } : {}) });
+              await saveManifest(vault, entries);
+              setDocs((prev) => mergeDocs(prev, [row]));
+              ok++;
+            }
+          }
+          await removePendingShare(rec.id);
+        } catch (e) {
+          console.error("share row", e);
+        }
+      }
+      void refreshShareQueueCount();
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("shareImport") || params.get("shareError")) {
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+      if (ok) showToast(`Imported ${ok} shared item(s)`);
+    } finally {
+      setIngestBusy(false);
+    }
+  }, [ensureVault, ingestFromFile, indexAndPersistEmbedding, refreshShareQueueCount, showToast]);
+
+  useEffect(() => {
+    if (!opfsReady) return;
+    void processAllPendingShares();
+  }, [opfsReady, processAllPendingShares]);
+
+  const handleImportFolderFromDisk = useCallback(async () => {
+    if (!supportsDirectoryPicker()) {
+      setIngestError("Folder import needs Chrome/Edge (showDirectoryPicker).");
+      return;
+    }
+    const vault = await ensureVault();
+    if (!vault) {
+      setIngestError("OPFS not available.");
+      return;
+    }
+    setIngestError(null);
+    setIngestBusy(true);
+    try {
+      const dir = await window.showDirectoryPicker({ mode: "read" });
+      let count = 0;
+      for await (const [, handle] of dir.entries()) {
+        if (handle.kind !== "file") continue;
+        const f = await handle.getFile();
+        if (f.size > 80 * 1024 * 1024) continue;
+        await ingestFromFile(f, { vault, storage: "opfs", fileHandle: null });
+        count++;
+      }
+      showToast(`Imported ${count} file(s) from folder`);
+    } catch (err) {
+      if (err?.name !== "AbortError") {
+        console.error(err);
+        setIngestError(err?.message || "Folder import failed");
+      }
+    } finally {
+      setIngestBusy(false);
+    }
+  }, [ensureVault, ingestFromFile, showToast]);
+
+  const handleExportVaultZip = useCallback(async () => {
+    const vault = vaultRef.current;
+    if (!vault) {
+      showToast("No vault to export");
+      return;
+    }
+    const entries = await loadManifest(vault);
+    if (!entries.length) {
+      showToast("Nothing local to export");
+      return;
+    }
+    setIngestBusy(true);
+    try {
+      const zip = await buildVaultZip(vault, entries, async (id) => {
+        const e = entries.find((x) => String(x.id) === String(id));
+        return resolveLocalFile({ id, source: "local", storage: e?.storage || "opfs" });
+      });
+      const blob = new Blob([zip], { type: "application/zip" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `silo-backup-${new Date().toISOString().slice(0, 10)}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast("Backup downloaded");
+    } catch (e) {
+      console.error(e);
+      showToast("Export failed");
+    } finally {
+      setIngestBusy(false);
+    }
+  }, [resolveLocalFile, showToast]);
+
+  const rewrapAllVaultText = useCallback(async (newPass, oldPass) => {
+    const vault = vaultRef.current;
+    if (!vault) return;
+    const entries = await loadManifest(vault);
+    for (const e of entries) {
+      const raw = await loadExtractedText(vault, e.id);
+      if (raw == null) continue;
+      const plain = await decodeStoredText(raw, oldPass);
+      await persistSecureText(vault, e.id, plain, newPass);
+    }
+  }, []);
+
+  const handleMergeBackupZip = useCallback(async (fileList) => {
+    const file = fileList?.[0];
+    if (!file) return;
+    const vault = await ensureVault();
+    if (!vault) {
+      showToast("OPFS required for merge");
+      return;
+    }
+    setIngestBusy(true);
+    try {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      const { manifest, files } = parseVaultZip(buf);
+      if (!manifest?.entries?.length) throw new Error("bad zip");
+      await applyVaultZipToOpfs(vault, files, manifest.entries);
+      setVaultEpoch((x) => x + 1);
+      showToast("Backup merged (same id → this device wins)");
+    } catch (e) {
+      console.error(e);
+      showToast("Merge failed — use a Silo export .zip");
+    } finally {
+      setIngestBusy(false);
+      if (backupImportRef.current) backupImportRef.current.value = "";
+    }
+  }, [ensureVault, showToast]);
+
+  const settingsActions = useMemo(() => [
+    { id: "export", label: "Export backup (.zip)", icon: "↑", onSelect: () => { void handleExportVaultZip(); } },
+    { id: "import", label: "Import / merge backup", icon: "↓", onSelect: () => { backupImportRef.current?.click(); } },
+    {
+      id: "folder",
+      label: "Import folder (Chrome)",
+      icon: "▤",
+      disabled: !supportsDirectoryPicker(),
+      onSelect: () => { void handleImportFolderFromDisk(); },
+    },
+    {
+      id: "pass",
+      label: "Set vault passphrase (encrypts index text)",
+      icon: "🔒",
+      onSelect: async () => {
+        const p1 = window.prompt("New passphrase (min 8 chars). Leave empty to skip:");
+        if (p1 == null) return;
+        if (p1.length > 0 && p1.length < 8) {
+          showToast("Passphrase too short");
+          return;
+        }
+        const oldP = vaultPassphrase;
+        if (p1) {
+          const p2 = window.prompt("Confirm passphrase:");
+          if (p1 !== p2) {
+            showToast("Mismatch");
+            return;
+          }
+          setIngestBusy(true);
+          try {
+            await rewrapAllVaultText(p1, oldP);
+            setVaultPassphrase(p1);
+            setVaultEpoch((x) => x + 1);
+            showToast("Vault text encrypted with passphrase");
+          } finally {
+            setIngestBusy(false);
+          }
+        }
+      },
+    },
+    {
+      id: "clearpass",
+      label: "Clear vault passphrase",
+      icon: "🔓",
+      onSelect: async () => {
+        if (!vaultPassphrase) {
+          showToast("No passphrase set");
+          return;
+        }
+        const cur = window.prompt("Current passphrase:");
+        if (cur !== vaultPassphrase) {
+          showToast("Wrong passphrase");
+          return;
+        }
+        setIngestBusy(true);
+        try {
+          await rewrapAllVaultText("", vaultPassphrase);
+          setVaultPassphrase("");
+          setVaultEpoch((x) => x + 1);
+          showToast("Passphrase cleared");
+        } finally {
+          setIngestBusy(false);
+        }
+      },
+    },
+    {
+      id: "cap",
+      label: "Native shell (Capacitor) — README",
+      icon: "📱",
+      onSelect: () => { window.open("/native/README.md", "_blank", "noopener,noreferrer"); },
+    },
+    {
+      id: "twa",
+      label: "Android TWA — README",
+      icon: "▣",
+      onSelect: () => { window.open("/native/TWA.md", "_blank", "noopener,noreferrer"); },
+    },
+  ], [handleExportVaultZip, handleImportFolderFromDisk, rewrapAllVaultText, vaultPassphrase, showToast]);
+
   const handlePointerDown = useCallback((doc, e) => {
     e.preventDefault();
     pressTimer.current = setTimeout(() => {
@@ -1049,6 +1388,12 @@ export default function Silo() {
 
   const handleAction = useCallback((action, doc) => {
     setContextMenu(null);
+    if (action === "Summarize") {
+      const body = contentById[doc.id] || "";
+      const s = summarizeExtractive(body, 400);
+      showToast(s ? `Summary: ${s}` : "Nothing to summarize");
+      return;
+    }
     if (action === "Rename") { setRenameDoc(doc); return; }
     if (action === "Delete") {
       (async () => {
@@ -1092,7 +1437,7 @@ export default function Silo() {
         showToast(`Downloading ${doc.name}…`);
       })();
     }
-  }, [showToast, resolveLocalFile]);
+  }, [showToast, resolveLocalFile, contentById]);
 
   const handleRename = useCallback(async (renamedDoc, newName) => {
     const docId = renamedDoc.id;
@@ -1108,11 +1453,13 @@ export default function Silo() {
           return next;
         }),
       );
-      const txt = contentById[docId]
-        ?? (await loadExtractedText(vaultRef.current, String(docId)))
-        ?? "";
+      let plain = contentById[docId];
+      if (plain == null || plain === "") {
+        const raw = (await loadExtractedText(vaultRef.current, String(docId))) ?? "";
+        plain = await decodeStoredText(raw, vaultPassphrase);
+      }
       const row = { ...renamedDoc, name: newName };
-      await indexAndPersistEmbedding(vaultRef.current, String(docId), row, txt);
+      await indexAndPersistEmbedding(vaultRef.current, String(docId), row, plain);
     } else {
       const boost = typeof docId === "number" ? (DEMO_INDEX_BOOST[docId] || "") : "";
       const nm = newName.replace(/\.(pdf|txt)$/i, "").replace(/_/g, " ");
@@ -1135,7 +1482,7 @@ export default function Silo() {
     }
     setRenameDoc(null);
     showToast("Renamed successfully");
-  }, [showToast, contentById, indexAndPersistEmbedding]);
+  }, [showToast, contentById, indexAndPersistEmbedding, vaultPassphrase]);
 
   const handleQueryChange = (val) => {
     setQuery(val);
@@ -1222,6 +1569,14 @@ export default function Silo() {
 
       <div style={{ padding: "0 28px 16px", display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
         <input
+          ref={backupImportRef}
+          type="file"
+          accept=".zip,application/zip"
+          style={{ display: "none" }}
+          aria-hidden="true"
+          onChange={(e) => { void handleMergeBackupZip(e.target.files); }}
+        />
+        <input
           ref={vaultFileInputRef}
           type="file"
           accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.heic,.m4a,.aac,.mp3,.wav,.webm,.ogg,.opus,.flac,application/pdf,image/*,audio/*"
@@ -1285,6 +1640,9 @@ export default function Silo() {
           Text note
         </button>
         <span style={{ fontSize: 9, color: "#3A3A38", letterSpacing: "0.06em", flex: "1 1 140px" }}>
+          {importQueueCount > 0 && (
+            <span style={{ color: "#5BC8C4", marginRight: 8 }}>{importQueueCount} share(s) queued</span>
+          )}
           {opfsReady
             ? (nativeLinkReady ? "Add file (copy) · Link from disk · OCR · voice · search" : "Add file (copy) · OCR · voice · search — link needs Chrome/Edge")
             : "OPFS unavailable — demo only"}
@@ -1295,6 +1653,26 @@ export default function Silo() {
           {ingestError}
         </div>
       )}
+
+      <div className="tag-strip" role="tablist" aria-label="Smart views" style={{ marginTop: 12 }}>
+        <button
+          type="button"
+          className={`tag-pill ${smartView === "" ? "active" : ""}`}
+          onClick={() => { setSmartView(""); }}
+        >
+          All items
+        </button>
+        {SMART_VIEWS.map((sv) => (
+          <button
+            key={sv.id}
+            type="button"
+            className={`tag-pill ${smartView === sv.id ? "active" : ""}`}
+            onClick={() => { setSmartView(sv.id); setActiveTag("All"); }}
+          >
+            {sv.label}
+          </button>
+        ))}
+      </div>
 
       {/* ── Filter Strip ── */}
       <div className="tag-strip" role="tablist" aria-label="Filter by category">
@@ -1447,7 +1825,7 @@ export default function Silo() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {settingsOpen && <SettingsDrawer onClose={() => setSettingsOpen(false)} />}
+        {settingsOpen && <SettingsDrawer onClose={() => setSettingsOpen(false)} actions={settingsActions} />}
       </AnimatePresence>
 
       <AnimatePresence>

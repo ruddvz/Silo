@@ -58,6 +58,7 @@ const MANIFEST = "manifest.json";
  *   mimeType?: string,
  *   storage?: VaultStorage,
  *   linkedPath?: string,
+ *   contentHash?: string,
  * }} VaultManifestEntry
  */
 
@@ -82,6 +83,7 @@ function normalizeEntry(raw) {
     mimeType: raw.mimeType,
     storage: raw.storage === "linked" ? "linked" : "opfs",
     linkedPath: typeof raw.linkedPath === "string" ? raw.linkedPath : undefined,
+    contentHash: typeof raw.contentHash === "string" ? raw.contentHash : undefined,
   };
 }
 
@@ -101,7 +103,7 @@ export async function loadManifest(vault) {
 
 /** @param {FileSystemDirectoryHandle} vault @param {VaultManifestEntry[]} entries */
 export async function saveManifest(vault, entries) {
-  const json = JSON.stringify({ version: 4, entries }, null, 0);
+  const json = JSON.stringify({ version: 5, entries }, null, 0);
   const blob = new Blob([json], { type: "application/json" });
   const handle = await vault.getFileHandle(MANIFEST, { create: true });
   const writable = await handle.createWritable();
@@ -130,6 +132,11 @@ export async function persistExtractedText(vault, id, text) {
 /** @param {FileSystemDirectoryHandle} vault @param {string} id */
 export async function loadExtractedText(vault, id) {
   return readTextFile(vault, "text", `${id}.txt`);
+}
+
+/** @param {FileSystemDirectoryHandle} vault @param {string} filename basename under text/ e.g. "uuid.txt" */
+export async function readTextSidecar(vault, filename) {
+  return readTextFile(vault, "text", filename);
 }
 
 /** @param {FileSystemDirectoryHandle} vault @param {string} id @param {Float32Array} vec */
@@ -164,6 +171,22 @@ export async function deleteVaultItem(vault, id) {
   await deleteFileInVault(vault, "files", id);
   await deleteFileInVault(vault, "text", `${id}.txt`);
   await deleteFileInVault(vault, "text", `${id}.emb.json`);
+}
+
+/**
+ * Merge manifest: incoming entries replace same id; unmatched incoming appended.
+ * @param {FileSystemDirectoryHandle} vault
+ * @param {VaultManifestEntry[]} incoming
+ */
+export async function mergeManifestDeviceWins(vault, incoming) {
+  const cur = await loadManifest(vault);
+  const byId = new Map(cur.map((e) => [String(e.id), { ...e }]));
+  for (const e of incoming) {
+    const id = String(e.id);
+    const prev = byId.get(id) || {};
+    byId.set(id, { ...prev, ...e, id });
+  }
+  await saveManifest(vault, Array.from(byId.values()));
 }
 
 /** @param {FileSystemDirectoryHandle} vault @param {string} id @returns {Promise<File | null>} */
