@@ -10,6 +10,22 @@ self.addEventListener("activate", (e) => {
   e.waitUntil(self.clients.claim());
 });
 
+/** Wake open Silo tabs so they can drain IndexedDB → OPFS (Background Sync, Chromium). */
+self.addEventListener("sync", (event) => {
+  if (event.tag !== "silo-share-queue") return;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const c of clients) {
+        try {
+          c.postMessage({ type: "SILO_PROCESS_SHARE_QUEUE" });
+        } catch {
+          /* client gone */
+        }
+      }
+    }),
+  );
+});
+
 function openShareDb() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(SHARE_DB, 1);
@@ -80,6 +96,15 @@ self.addEventListener("fetch", (event) => {
           importAttempts: 0,
           lastError: "",
         });
+
+        const reg = self.registration;
+        if (reg && "sync" in reg) {
+          try {
+            await reg.sync.register("silo-share-queue");
+          } catch {
+            /* Background Sync unavailable or denied */
+          }
+        }
 
         return Response.redirect(`/?shareImport=${encodeURIComponent(id)}`, 303);
       } catch (err) {

@@ -21,7 +21,14 @@ import {
 import { buildVaultSearchIndex } from "./vault/searchIndex.js";
 import { topMatchingDocIds } from "./vault/vectorSearch.js";
 import { mergeSearchIds } from "./vault/hybridSearch.js";
-import { removePendingShare, getAllPendingShares, recordShareImportFailure, clearAllPendingShares } from "./vault/shareQueue.js";
+import {
+  removePendingShare,
+  getAllPendingShares,
+  recordShareImportFailure,
+  clearAllPendingShares,
+  getShareQueueStats,
+  requestShareQueueBackgroundSync,
+} from "./vault/shareQueue.js";
 import { buildVaultZip, parseVaultZip, applyVaultZipToOpfs } from "./vault/exportBackup.js";
 import { persistSecureText, decodeStoredText } from "./vault/secureText.js";
 import { sha256HexFromBlob } from "./vault/fileHash.js";
@@ -430,7 +437,10 @@ function SettingsDrawer({ onClose, actions }) {
             ref={i === 0 ? firstRef : null}
             type="button"
             disabled={opt.disabled}
-            onClick={() => { opt.onSelect?.(); onClose(); }}
+            onClick={() => {
+              opt.onSelect?.();
+              if (!opt.keepOpen) onClose();
+            }}
             style={{
               display: "flex", justifyContent: "space-between", alignItems: "center",
               width: "100%", padding: "14px 0", background: "transparent",
@@ -543,6 +553,7 @@ export default function Silo() {
   const [vaultPassphrase, setVaultPassphrase] = useState(() => sessionStorage.getItem("silo_vault_pass") || "");
   const [smartView,     setSmartView]     = useState("");
   const [importQueueCount, setImportQueueCount] = useState(0);
+  const [shareQueueFailedCount, setShareQueueFailedCount] = useState(0);
   const [vaultEpoch, setVaultEpoch] = useState(0);
 
   const pressTimer       = useRef(null);
@@ -552,6 +563,7 @@ export default function Silo() {
   const vaultRef         = useRef(null);
   const vaultFileInputRef = useRef(null);
   const backupImportRef = useRef(null);
+  const processAllPendingSharesRef = useRef(async () => {});
 
   useEffect(() => {
     if (vaultPassphrase) sessionStorage.setItem("silo_vault_pass", vaultPassphrase);
@@ -560,10 +572,12 @@ export default function Silo() {
 
   const refreshShareQueueCount = useCallback(async () => {
     try {
-      const all = await getAllPendingShares();
-      setImportQueueCount(all.length);
+      const { total, failed } = await getShareQueueStats();
+      setImportQueueCount(total);
+      setShareQueueFailedCount(failed);
     } catch {
       setImportQueueCount(0);
+      setShareQueueFailedCount(0);
     }
   }, []);
 
@@ -572,6 +586,19 @@ export default function Silo() {
     const id = setInterval(() => { void refreshShareQueueCount(); }, 5000);
     return () => clearInterval(id);
   }, [refreshShareQueueCount]);
+
+  useEffect(() => {
+    const onSwMessage = (e) => {
+      if (e.data?.type !== "SILO_PROCESS_SHARE_QUEUE") return;
+      if (!opfsReady) return;
+      void processAllPendingSharesRef.current();
+    };
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("message", onSwMessage);
+      return () => navigator.serviceWorker.removeEventListener("message", onSwMessage);
+    }
+    return undefined;
+  }, [opfsReady]);
 
   useEffect(() => {
     setNativeLinkReady(supportsNativeFileSystemLink());
@@ -1223,6 +1250,7 @@ export default function Silo() {
         } catch (e) {
           console.error("share row", e);
           const n = await recordShareImportFailure(rec.id, e?.message || String(e));
+          void requestShareQueueBackgroundSync();
           if (n >= 5) {
             await removePendingShare(rec.id);
             showToast("Dropped share after 5 failed imports");
@@ -1241,6 +1269,8 @@ export default function Silo() {
       setIngestBusy(false);
     }
   }, [ensureVault, ingestFromFile, indexAndPersistEmbedding, refreshShareQueueCount, showToast, isDuplicateContent]);
+
+  processAllPendingSharesRef.current = processAllPendingShares;
 
   useEffect(() => {
     if (!opfsReady) return;
@@ -1404,6 +1434,16 @@ export default function Silo() {
     showToast("Cleared pending shares");
   }, [refreshShareQueueCount, showToast]);
 
+  const handleRetryShareImports = useCallback(async () => {
+    if (!opfsReady) {
+      showToast("Vault not ready");
+      return;
+    }
+    void requestShareQueueBackgroundSync();
+    await processAllPendingShares();
+    void refreshShareQueueCount();
+  }, [opfsReady, processAllPendingShares, refreshShareQueueCount, showToast]);
+
   const settingsActions = useMemo(() => [
     { id: "export", label: "Export backup (.zip)", icon: "↑", onSelect: () => { void handleExportVaultZip(); } },
     { id: "import", label: "Import / merge backup", icon: "↓", onSelect: () => { backupImportRef.current?.click(); } },
@@ -1416,7 +1456,37 @@ export default function Silo() {
     },
     { id: "integrity", label: "Check vault integrity", icon: "✓", onSelect: () => { void handleCheckVaultIntegrity(); } },
     { id: "repair", label: "Repair vault (rebuild text/embeddings)", icon: "↻", onSelect: () => { void handleRepairVault(); } },
+    {
+      id: "retryshares",
+      label: "Retry pending share imports",
+      icon: "↺",
+      disabled: importQueueCount === 0 || ingestBusy,
+      keepOpen: true,
+      onSelect: () => { void handleRetryShareImports(); },
+    },
     { id: "clearshares", label: "Clear pending shares queue", icon: "⊘", onSelect: () => { void handleClearShareQueue(); } },
+    {
+      id: "sharetips",
+      label: "Share target tips (PWA)",
+      icon: "ⓘ",
+      keepOpen: true,
+      onSelect: () => {
+        const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+        const iOS = /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+        const lines = iOS
+          ? [
+            "iOS: Share → installed PWA is inconsistent in Safari.",
+            "Use + Add file or Text note as the reliable path.",
+            "For parity with Android share, use the native shell (Capacitor) README.",
+          ]
+          : [
+            "Android: Install from Chrome → Add to Home screen, then Share → Silo.",
+            "If imports stall, open Silo once; failed items show Retry in settings.",
+            "Chrome may sync the queue in the background when the tab was open before.",
+          ];
+        showToast(lines.join(" "));
+      },
+    },
     {
       id: "pass",
       label: "Set vault passphrase (encrypts index text)",
@@ -1490,6 +1560,9 @@ export default function Silo() {
     handleCheckVaultIntegrity,
     handleRepairVault,
     handleClearShareQueue,
+    handleRetryShareImports,
+    importQueueCount,
+    ingestBusy,
     rewrapAllVaultText,
     vaultPassphrase,
     showToast,
@@ -1782,7 +1855,11 @@ export default function Silo() {
         </button>
         <span style={{ fontSize: 9, color: "#3A3A38", letterSpacing: "0.06em", flex: "1 1 140px" }}>
           {importQueueCount > 0 && (
-            <span style={{ color: "#5BC8C4", marginRight: 8 }}>{importQueueCount} share(s) queued</span>
+            <span style={{ color: shareQueueFailedCount > 0 ? "#C8963E" : "#5BC8C4", marginRight: 8 }}>
+              {shareQueueFailedCount > 0
+                ? `${shareQueueFailedCount} share import(s) failed — open Settings → Retry`
+                : `${importQueueCount} share(s) queued`}
+            </span>
           )}
           {opfsReady
             ? (nativeLinkReady ? "Add file (copy) · Link from disk · OCR · voice · search" : "Add file (copy) · OCR · voice · search — link needs Chrome/Edge")

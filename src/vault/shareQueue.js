@@ -73,3 +73,32 @@ export async function clearAllPendingShares() {
   const all = await getAllPendingShares();
   await Promise.all(all.map((r) => removePendingShare(r.id)));
 }
+
+/**
+ * @returns {Promise<{ total: number, failed: number }>}
+ * `failed` = rows that failed at least once and are still queued (user-visible retry surface).
+ */
+export async function getShareQueueStats() {
+  const all = await getAllPendingShares();
+  const failed = all.filter((r) => {
+    const attempts = Number(r.importAttempts) || 0;
+    const err = String(r.lastError || "").trim();
+    return attempts > 0 || err.length > 0;
+  }).length;
+  return { total: all.length, failed };
+}
+
+/**
+ * Best-effort: ask the browser to run a sync pass later (Chrome/Android; no-op if unsupported).
+ * Call after enqueueing a share or after a failed import so a reopened tab can drain the queue.
+ */
+export async function requestShareQueueBackgroundSync() {
+  if (typeof navigator === "undefined" || !navigator.serviceWorker) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    if (!reg.sync || typeof reg.sync.register !== "function") return;
+    await reg.sync.register("silo-share-queue");
+  } catch {
+    /* quota, permission, or browser without Background Sync */
+  }
+}
