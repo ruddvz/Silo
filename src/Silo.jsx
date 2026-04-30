@@ -1,22 +1,49 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
+import {
+  getVaultRoot,
+  loadManifest,
+  saveManifest,
+  persistUploadedPdf,
+  persistExtractedText,
+  loadExtractedText,
+  deleteVaultItem,
+  readVaultPdfFile,
+} from "./vault/opfs.js";
+import { buildVaultSearchIndex } from "./vault/searchIndex.js";
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
-const DOCS = [
-  { id: 1,  name: "passport_scan.pdf",      tag: "Identity",  date: "Mar 12, 2024", size: "2.1 MB" },
-  { id: 2,  name: "drivers_license.pdf",    tag: "Identity",  date: "Jan 08, 2024", size: "980 KB" },
-  { id: 11, name: "sincard.pdf",            tag: "Identity",  date: "May 01, 2023", size: "150 KB" },
-  { id: 3,  name: "hydro_bill_feb.pdf",     tag: "Utilities", date: "Feb 28, 2024", size: "340 KB" },
-  { id: 8,  name: "hydro_bill_jan.pdf",     tag: "Utilities", date: "Jan 29, 2024", size: "310 KB" },
-  { id: 4,  name: "lease_agreement.pdf",    tag: "Housing",   date: "Sep 01, 2023", size: "4.8 MB" },
-  { id: 12, name: "lease_renewal_2024.pdf", tag: "Housing",   date: "Mar 15, 2024", size: "3.1 MB" },
-  { id: 5,  name: "t4_2023.pdf",            tag: "Tax",       date: "Feb 20, 2024", size: "1.2 MB" },
-  { id: 9,  name: "bank_statement_mar.pdf", tag: "Finance",   date: "Mar 31, 2024", size: "890 KB" },
-  { id: 10, name: "void_cheque.pdf",        tag: "Finance",   date: "Nov 10, 2023", size: "220 KB" },
-  { id: 6,  name: "insurance_auto.pdf",     tag: "Insurance", date: "Jan 15, 2024", size: "2.6 MB" },
-  { id: 7,  name: "college_diploma.pdf",    tag: "Education", date: "Jun 15, 2022", size: "5.3 MB" },
+const SEED_DOCS = [
+  { id: 1,  name: "passport_scan.pdf",      tag: "Identity",  date: "Mar 12, 2024", size: "2.1 MB",  source: "demo", createdAt: "2024-03-12T12:00:00.000Z" },
+  { id: 2,  name: "drivers_license.pdf",    tag: "Identity",  date: "Jan 08, 2024", size: "980 KB", source: "demo", createdAt: "2024-01-08T12:00:00.000Z" },
+  { id: 11, name: "sincard.pdf",            tag: "Identity",  date: "May 01, 2023", size: "150 KB", source: "demo", createdAt: "2023-05-01T12:00:00.000Z" },
+  { id: 3,  name: "hydro_bill_feb.pdf",     tag: "Utilities", date: "Feb 28, 2024", size: "340 KB", source: "demo", createdAt: "2024-02-28T12:00:00.000Z" },
+  { id: 8,  name: "hydro_bill_jan.pdf",     tag: "Utilities", date: "Jan 29, 2024", size: "310 KB", source: "demo", createdAt: "2024-01-29T12:00:00.000Z" },
+  { id: 4,  name: "lease_agreement.pdf",    tag: "Housing",   date: "Sep 01, 2023", size: "4.8 MB", source: "demo", createdAt: "2023-09-01T12:00:00.000Z" },
+  { id: 12, name: "lease_renewal_2024.pdf", tag: "Housing",   date: "Mar 15, 2024", size: "3.1 MB", source: "demo", createdAt: "2024-03-15T12:00:00.000Z" },
+  { id: 5,  name: "t4_2023.pdf",            tag: "Tax",       date: "Feb 20, 2024", size: "1.2 MB", source: "demo", createdAt: "2024-02-20T12:00:00.000Z" },
+  { id: 9,  name: "bank_statement_mar.pdf", tag: "Finance",   date: "Mar 31, 2024", size: "890 KB", source: "demo", createdAt: "2024-03-31T12:00:00.000Z" },
+  { id: 10, name: "void_cheque.pdf",        tag: "Finance",   date: "Nov 10, 2023", size: "220 KB", source: "demo", createdAt: "2023-11-10T12:00:00.000Z" },
+  { id: 6,  name: "insurance_auto.pdf",     tag: "Insurance", date: "Jan 15, 2024", size: "2.6 MB", source: "demo", createdAt: "2024-01-15T12:00:00.000Z" },
+  { id: 7,  name: "college_diploma.pdf",    tag: "Education", date: "Jun 15, 2022", size: "5.3 MB", source: "demo", createdAt: "2022-06-15T12:00:00.000Z" },
 ];
+
+/** Extra phrases so demo search behaves more like semantic "concepts" */
+const DEMO_INDEX_BOOST = {
+  1: "passport travel identity citizenship",
+  2: "driver license driving permit identification",
+  11: "social insurance national identity card",
+  3: "hydro electricity utility bill power",
+  8: "hydro electricity utility bill power",
+  4: "lease rent housing apartment landlord",
+  12: "lease renewal housing rent",
+  5: "income tax t4 employment earnings",
+  9: "bank account statement finance",
+  10: "cheque checking account void finance",
+  6: "auto vehicle car insurance policy",
+  7: "university college degree diploma education",
+};
 
 const TAG_META = {
   Identity:  { color: "#C8963E", bg: "rgba(200,150,62,0.10)",  label: "ID"  },
@@ -43,6 +70,44 @@ const SETTINGS_OPTIONS = [
 function parseMB(sizeStr) {
   const n = parseFloat(sizeStr);
   return sizeStr.includes("MB") ? n : n / 1024;
+}
+
+function formatBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDate(iso) {
+  try {
+    return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
+/** @param {string} text */
+function inferTagGuess(text) {
+  const t = text.toLowerCase();
+  if (/passport|driver|license|sin card|identity|citizenship/.test(t)) return "Identity";
+  if (/hydro|utility|electric|water|gas bill/.test(t)) return "Utilities";
+  if (/lease|rent|landlord|tenant|housing/.test(t)) return "Housing";
+  if (/\bt4\b|tax return|income tax|irs|cra/.test(t)) return "Tax";
+  if (/bank|statement|cheque|check|finance|account/.test(t)) return "Finance";
+  if (/insurance|policy|premium|auto coverage/.test(t)) return "Insurance";
+  if (/diploma|degree|university|college|education/.test(t)) return "Education";
+  return "Identity";
+}
+
+function mergeDocs(seed, local) {
+  const byId = new Map();
+  for (const d of seed) byId.set(String(d.id), d);
+  for (const d of local) byId.set(String(d.id), d);
+  return Array.from(byId.values()).sort((a, b) => {
+    const ta = new Date(a.createdAt || 0).getTime();
+    const tb = new Date(b.createdAt || 0).getTime();
+    return tb - ta;
+  });
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -266,16 +331,29 @@ function ContextMenu({ doc, onAction, onClose }) {
 export default function Silo() {
   const [activeTag,     setActiveTag]     = useState("All");
   const [query,         setQuery]         = useState("");
-  const [docs,          setDocs]          = useState(DOCS);
+  const [docs,          setDocs]          = useState(() => SEED_DOCS.map((d) => ({ ...d })));
+  const [contentById,  setContentById]   = useState(() => {
+    const o = {};
+    for (const d of SEED_DOCS) {
+      o[d.id] = `${d.name.replace(/\.pdf$/i, "").replace(/_/g, " ")} ${d.tag} ${DEMO_INDEX_BOOST[d.id] || ""}`;
+    }
+    return o;
+  });
+  const [opfsReady,     setOpfsReady]     = useState(false);
+  const [ingestBusy,    setIngestBusy]    = useState(false);
+  const [ingestError,   setIngestError]   = useState(null);
+
   const [contextMenu,   setContextMenu]   = useState(null);
   const [renameDoc,     setRenameDoc]     = useState(null);
   const [settingsOpen,  setSettingsOpen]  = useState(false);
   const [toast,         setToast]         = useState(null);
 
-  const pressTimer    = useRef(null);
-  const blurTimer     = useRef(null);
-  const searchRef     = useRef(null);
-  const styleInjected = useRef(false);
+  const pressTimer       = useRef(null);
+  const blurTimer        = useRef(null);
+  const searchRef        = useRef(null);
+  const styleInjected    = useRef(false);
+  const vaultRef         = useRef(null);
+  const uploadInputRef   = useRef(null);
 
   // ── Inject global styles once ──
   useEffect(() => {
@@ -362,27 +440,159 @@ export default function Silo() {
 
   const showToast = useCallback((msg) => setToast(msg), []);
 
+  // ── Load user vault from OPFS (manifest + extracted text) ──
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const vault = await getVaultRoot();
+      if (cancelled) return;
+      if (!vault) {
+        setOpfsReady(false);
+        return;
+      }
+      vaultRef.current = vault;
+      setOpfsReady(true);
+      const entries = await loadManifest(vault);
+      if (cancelled || !entries.length) return;
+
+      const localRows = [];
+      const contentUpdates = {};
+      for (const e of entries) {
+        const txt = await loadExtractedText(vault, e.id);
+        localRows.push({
+          id: e.id,
+          name: e.name,
+          tag: e.tag,
+          date: formatDate(e.createdAt),
+          size: formatBytes(e.sizeBytes),
+          source: "local",
+          createdAt: e.createdAt,
+          sizeBytes: e.sizeBytes,
+        });
+        contentUpdates[e.id] = txt ?? "";
+      }
+      setDocs((prev) => mergeDocs(prev.filter((d) => d.source !== "local"), localRows));
+      setContentById((prev) => ({ ...prev, ...contentUpdates }));
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const searchIndex = useMemo(() => {
+    const rows = docs.map((d) => ({
+      id: d.id,
+      name: d.name,
+      tag: d.tag,
+      content: contentById[d.id] ?? "",
+    }));
+    return buildVaultSearchIndex(rows);
+  }, [docs, contentById]);
+
   // ── Filtered display data ──
   const display = useMemo(() => {
+    const q = query.trim();
+    const idSet = q ? searchIndex.matchingDocIds(q) : null;
     const filtered = docs.filter((d) => {
       const tagOk = activeTag === "All" || d.tag === activeTag;
-      const qOk   = !query || d.name.toLowerCase().includes(query.toLowerCase());
-      return tagOk && qOk;
+      const idOk = idSet == null || idSet.has(String(d.id));
+      return tagOk && idOk;
     });
     return Object.keys(TAG_META).reduce((acc, tag) => {
-      const items = filtered.filter((d) => d.tag === tag);
+      const items = filtered.filter((doc) => doc.tag === tag);
       if (items.length) acc[tag] = items;
       return acc;
     }, {});
-  }, [docs, activeTag, query]);
+  }, [docs, activeTag, query, searchIndex]);
 
   const hasResults = Object.keys(display).length > 0;
 
   // Total converted to GB for the hero stat
   const totalGB = useMemo(() => {
-    const mb = docs.reduce((a, d) => a + parseMB(d.size), 0);
+    let mb = 0;
+    for (const d of docs) {
+      if (typeof d.size === "string" && d.size) mb += parseMB(d.size);
+      else if (d.sizeBytes != null) mb += d.sizeBytes / (1024 * 1024);
+    }
     return (mb / 1024).toFixed(1);
   }, [docs]);
+
+  const handleOpenDoc = useCallback(async (doc) => {
+    if (doc.source === "local" && vaultRef.current) {
+      const file = await readVaultPdfFile(vaultRef.current, String(doc.id));
+      if (file) {
+        const url = URL.createObjectURL(file);
+        window.open(url, "_blank", "noopener,noreferrer");
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        showToast(`Opened ${doc.name}`);
+        return;
+      }
+    }
+    showToast(`Opening ${doc.name}…`);
+  }, [showToast]);
+
+  const handlePickPdf = useCallback(() => {
+    uploadInputRef.current?.click();
+  }, []);
+
+  const handlePdfFiles = useCallback(async (fileList) => {
+    const file = fileList?.[0];
+    if (!file) return;
+    let vault = vaultRef.current;
+    if (!vault) {
+      vault = await getVaultRoot();
+      vaultRef.current = vault;
+    }
+    if (!vault) {
+      setIngestError("Private on-device storage (OPFS) is not available here. Use HTTPS or a supported browser.");
+      if (uploadInputRef.current) uploadInputRef.current.value = "";
+      return;
+    }
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
+      setIngestError("Please choose a PDF file.");
+      return;
+    }
+    setIngestError(null);
+    setIngestBusy(true);
+    try {
+      const id = crypto.randomUUID();
+      const buffer = await file.arrayBuffer();
+      const { extractTextFromPdfBuffer } = await import("./vault/extractPdfText.js");
+      const text = await extractTextFromPdfBuffer(buffer);
+      const tag = inferTagGuess(text + " " + file.name);
+      const createdAt = new Date().toISOString();
+      const entry = {
+        id,
+        name: file.name,
+        tag,
+        createdAt,
+        sizeBytes: file.size,
+      };
+      await persistUploadedPdf(vault, file, { id, name: file.name, tag });
+      await persistExtractedText(vault, id, text);
+      const entries = await loadManifest(vault);
+      entries.push(entry);
+      await saveManifest(vault, entries);
+
+      const row = {
+        id,
+        name: file.name,
+        tag,
+        date: formatDate(createdAt),
+        size: formatBytes(file.size),
+        source: "local",
+        createdAt,
+        sizeBytes: file.size,
+      };
+      setDocs((prev) => mergeDocs(prev, [row]));
+      setContentById((prev) => ({ ...prev, [id]: text }));
+      showToast("PDF indexed locally");
+    } catch (err) {
+      console.error(err);
+      setIngestError(err?.message || "Could not process this PDF.");
+    } finally {
+      setIngestBusy(false);
+      if (uploadInputRef.current) uploadInputRef.current.value = "";
+    }
+  }, [showToast]);
 
   // ── Press handlers (tap vs long-press) ──
   const handlePointerDown = useCallback((doc, e) => {
@@ -397,9 +607,9 @@ export default function Silo() {
     if (pressTimer.current) {
       clearTimeout(pressTimer.current);
       pressTimer.current = null;
-      showToast(`Opening ${doc.name}…`);
+      void handleOpenDoc(doc);
     }
-  }, [showToast]);
+  }, [handleOpenDoc]);
 
   const handlePointerCancel = useCallback(() => {
     clearTimeout(pressTimer.current);
@@ -409,24 +619,72 @@ export default function Silo() {
   const handleCardKeyDown = useCallback((doc, e) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      showToast(`Opening ${doc.name}…`);
+      void handleOpenDoc(doc);
     }
     if (e.key === "ContextMenu") {
       e.preventDefault();
       setContextMenu({ doc });
     }
-  }, [showToast]);
+  }, [handleOpenDoc]);
 
   const handleAction = useCallback((action, doc) => {
     setContextMenu(null);
-    if (action === "Rename")   { setRenameDoc(doc); return; }
-    if (action === "Delete")   { setDocs((prev) => prev.filter((d) => d.id !== doc.id)); showToast(`Deleted ${doc.name}`); return; }
-    if (action === "Share")    { showToast(`Sharing ${doc.name}…`);     return; }
-    if (action === "Download") { showToast(`Downloading ${doc.name}…`); return; }
+    if (action === "Rename") { setRenameDoc(doc); return; }
+    if (action === "Delete") {
+      (async () => {
+        if (doc.source === "local" && vaultRef.current) {
+          await deleteVaultItem(vaultRef.current, String(doc.id));
+          const entries = await loadManifest(vaultRef.current);
+          await saveManifest(vaultRef.current, entries.filter((e) => String(e.id) !== String(doc.id)));
+        }
+      })();
+      setDocs((prev) => prev.filter((d) => d.id !== doc.id));
+      setContentById((prev) => {
+        const next = { ...prev };
+        delete next[doc.id];
+        return next;
+      });
+      showToast(`Deleted ${doc.name}`);
+      return;
+    }
+    if (action === "Share") { showToast(`Sharing ${doc.name}…`); return; }
+    if (action === "Download") {
+      (async () => {
+        if (doc.source === "local" && vaultRef.current) {
+          const f = await readVaultPdfFile(vaultRef.current, String(doc.id));
+          if (f) {
+            const url = URL.createObjectURL(f);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = doc.name;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast(`Saved ${doc.name}`);
+            return;
+          }
+        }
+        showToast(`Downloading ${doc.name}…`);
+      })();
+    }
   }, [showToast]);
 
-  const handleRename = useCallback((docId, newName) => {
-    setDocs((prev) => prev.map((d) => d.id === docId ? { ...d, name: newName } : d));
+  const handleRename = useCallback(async (renamedDoc, newName) => {
+    const docId = renamedDoc.id;
+    setDocs((prev) => prev.map((d) => (d.id === docId ? { ...d, name: newName } : d)));
+    if (renamedDoc.source === "local" && vaultRef.current) {
+      const entries = await loadManifest(vaultRef.current);
+      await saveManifest(
+        vaultRef.current,
+        entries.map((e) => (e.id === String(docId) ? { ...e, name: newName } : e)),
+      );
+    } else {
+      const boost = typeof docId === "number" ? (DEMO_INDEX_BOOST[docId] || "") : "";
+      const base = newName.replace(/\.pdf$/i, "").replace(/_/g, " ");
+      setContentById((prev) => ({
+        ...prev,
+        [docId]: `${base} ${renamedDoc.tag} ${boost}`.trim(),
+      }));
+    }
     setRenameDoc(null);
     showToast("Renamed successfully");
   }, [showToast]);
@@ -514,6 +772,43 @@ export default function Silo() {
         </div>
       </motion.div>
 
+      <div style={{ padding: "0 28px 16px", display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+        <input
+          ref={uploadInputRef}
+          type="file"
+          accept="application/pdf"
+          style={{ display: "none" }}
+          aria-hidden="true"
+          onChange={(e) => { void handlePdfFiles(e.target.files); }}
+        />
+        <button
+          type="button"
+          onClick={handlePickPdf}
+          disabled={ingestBusy}
+          style={{
+            padding: "10px 18px",
+            borderRadius: 20,
+            border: "1px solid #282828",
+            background: "rgba(17,17,17,0.6)",
+            color: ingestBusy ? "#3A3A38" : "#EDECEA",
+            fontSize: 11,
+            cursor: ingestBusy ? "wait" : "pointer",
+            fontFamily: "var(--mono)",
+            letterSpacing: "0.04em",
+          }}
+        >
+          {ingestBusy ? "Indexing…" : "+ Add PDF (local)"}
+        </button>
+        <span style={{ fontSize: 9, color: "#3A3A38", letterSpacing: "0.06em" }}>
+          {opfsReady ? "OPFS vault ready" : "OPFS unavailable — demo only"}
+        </span>
+      </div>
+      {ingestError && (
+        <div style={{ padding: "0 28px 12px", fontSize: 11, color: "#C86E8A" }}>
+          {ingestError}
+        </div>
+      )}
+
       {/* ── Filter Strip ── */}
       <div className="tag-strip" role="tablist" aria-label="Filter by category">
         {ALL_TAGS.map((tag) => (
@@ -538,7 +833,7 @@ export default function Silo() {
             exit={{ opacity: 0, height: 0 }}
             style={{ padding: "12px 28px 0", fontSize: 10, color: "#848480" }}
           >
-            Searching all categories for "{query}"
+            Full-text search (name + extracted text) for "{query}"
           </motion.div>
         )}
       </AnimatePresence>
@@ -671,7 +966,7 @@ export default function Silo() {
         {renameDoc && (
           <RenameModal
             doc={renameDoc}
-            onConfirm={(newName) => handleRename(renameDoc.id, newName)}
+            onConfirm={(newName) => { void handleRename(renameDoc, newName); }}
             onCancel={() => setRenameDoc(null)}
           />
         )}
