@@ -97,7 +97,6 @@ The **build** job can succeed while **deploy** fails until that setting is corre
 ├── public/           # Static assets, manifest, service worker, native docs
 ├── scripts/          # Build helpers (e.g. GitHub Pages post-build)
 ├── src/
-│   ├── assets/       # Brand assets (e.g. header logo)
 │   ├── vault/        # OPFS, crypto, search, OCR, transcribe, backup, etc.
 │   ├── Silo.jsx      # Main app UI
 │   ├── main.jsx
