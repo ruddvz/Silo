@@ -47,6 +47,7 @@ const MANIFEST = "manifest.json";
 
 /**
  * @typedef {"pdf" | "text" | "audio" | "file" | "image"} VaultKind
+ * @typedef {"opfs" | "linked"} VaultStorage
  * @typedef {{
  *   id: string,
  *   name: string,
@@ -55,6 +56,8 @@ const MANIFEST = "manifest.json";
  *   createdAt: string,
  *   sizeBytes: number,
  *   mimeType?: string,
+ *   storage?: VaultStorage,
+ *   linkedPath?: string,
  * }} VaultManifestEntry
  */
 
@@ -62,13 +65,13 @@ const MANIFEST = "manifest.json";
 function normalizeEntry(raw) {
   const id = String(raw.id);
   let kind = raw.kind;
-    if (!kind) {
-      const n = String(raw.name || "").toLowerCase();
-      if (n.endsWith(".pdf")) kind = "pdf";
-      else if (/\.(png|jpe?g|gif|webp|bmp|heic|heif)$/i.test(n)) kind = "image";
-      else if (/\.(m4a|aac|mp3|wav|webm|ogg|opus|flac)$/i.test(n)) kind = "audio";
-      else kind = "file";
-    }
+  if (!kind) {
+    const n = String(raw.name || "").toLowerCase();
+    if (n.endsWith(".pdf")) kind = "pdf";
+    else if (/\.(png|jpe?g|gif|webp|bmp|heic|heif)$/i.test(n)) kind = "image";
+    else if (/\.(m4a|aac|mp3|wav|webm|ogg|opus|flac)$/i.test(n)) kind = "audio";
+    else kind = "file";
+  }
   return {
     id,
     name: raw.name,
@@ -77,6 +80,8 @@ function normalizeEntry(raw) {
     createdAt: raw.createdAt,
     sizeBytes: Number(raw.sizeBytes) || 0,
     mimeType: raw.mimeType,
+    storage: raw.storage === "linked" ? "linked" : "opfs",
+    linkedPath: typeof raw.linkedPath === "string" ? raw.linkedPath : undefined,
   };
 }
 
@@ -96,7 +101,7 @@ export async function loadManifest(vault) {
 
 /** @param {FileSystemDirectoryHandle} vault @param {VaultManifestEntry[]} entries */
 export async function saveManifest(vault, entries) {
-  const json = JSON.stringify({ version: 3, entries }, null, 0);
+  const json = JSON.stringify({ version: 4, entries }, null, 0);
   const blob = new Blob([json], { type: "application/json" });
   const handle = await vault.getFileHandle(MANIFEST, { create: true });
   const writable = await handle.createWritable();

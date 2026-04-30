@@ -12,6 +12,13 @@ import {
   persistEmbedding,
   loadEmbedding,
 } from "./vault/opfs.js";
+import {
+  supportsNativeFileSystemLink,
+  pickFilesFromDisk,
+  storeLinkedFileHandle,
+  getLinkedFile,
+  removeLinkedFileHandle,
+} from "./vault/nativeFileHandles.js";
 import { buildVaultSearchIndex } from "./vault/searchIndex.js";
 import { topMatchingDocIds } from "./vault/vectorSearch.js";
 import { mergeSearchIds } from "./vault/hybridSearch.js";
@@ -77,7 +84,8 @@ const DEMO_TEXT_BODY = {
   20: "Hey — reminder rent is due April 5. E-transfer to the usual address. Thx!",
 };
 
-function kindLabel(kind) {
+function kindLabel(kind, storage) {
+  if (storage === "linked" && kind !== "text") return "LNK";
   if (kind === "text") return "MSG";
   if (kind === "audio") return "MIC";
   if (kind === "image") return "IMG";
@@ -500,6 +508,7 @@ export default function Silo() {
     return o;
   });
   const [opfsReady,     setOpfsReady]     = useState(false);
+  const [nativeLinkReady, setNativeLinkReady] = useState(false);
   const [ingestBusy,    setIngestBusy]    = useState(false);
   const [ingestError,   setIngestError]   = useState(null);
   const [noteModalOpen, setNoteModalOpen] = useState(false);
@@ -518,7 +527,9 @@ export default function Silo() {
   const vaultRef         = useRef(null);
   const vaultFileInputRef = useRef(null);
 
-  // ── Inject global styles once ──
+  useEffect(() => {
+    setNativeLinkReady(supportsNativeFileSystemLink());
+  }, []);
   useEffect(() => {
     if (styleInjected.current) return;
     styleInjected.current = true;
@@ -627,6 +638,7 @@ export default function Silo() {
           name: e.name,
           tag: e.tag,
           kind: e.kind || "pdf",
+          storage: e.storage || "opfs",
           date: formatDate(e.createdAt),
           size: formatBytes(e.sizeBytes),
           source: "local",
@@ -756,6 +768,17 @@ export default function Silo() {
     setEmbeddingsById((prev) => ({ ...prev, [String(id)]: vec }));
   }, []);
 
+  const resolveLocalFile = useCallback(async (doc) => {
+    if (doc.storage === "linked") {
+      const f = await getLinkedFile(String(doc.id));
+      if (f) return f;
+    }
+    if (vaultRef.current) {
+      return readVaultBlobFile(vaultRef.current, String(doc.id));
+    }
+    return null;
+  }, []);
+
   const handleOpenDoc = useCallback(async (doc) => {
     const k = doc.kind || "pdf";
     if (doc.source === "demo") {
@@ -776,7 +799,7 @@ export default function Silo() {
         showToast(body ? `Note: ${body.slice(0, 120)}${body.length > 120 ? "…" : ""}` : "Empty note");
         return;
       }
-      const file = await readVaultBlobFile(vaultRef.current, String(doc.id));
+      const file = await resolveLocalFile(doc);
       if (file) {
         const url = URL.createObjectURL(file);
         window.open(url, "_blank", "noopener,noreferrer");
@@ -784,9 +807,13 @@ export default function Silo() {
         showToast(`Opened ${doc.name}`);
         return;
       }
+      if (doc.storage === "linked") {
+        showToast("Allow file access again, or the file was moved.");
+        return;
+      }
     }
     showToast(`Opening ${doc.name}…`);
-  }, [showToast, contentById]);
+  }, [showToast, contentById, resolveLocalFile]);
 
   const ensureVault = useCallback(async () => {
     let v = vaultRef.current;
@@ -801,6 +828,86 @@ export default function Silo() {
     vaultFileInputRef.current?.click();
   }, []);
 
+  const ingestFromFile = useCallback(async (file, options) => {
+    const { vault, storage, fileHandle } = options;
+    const lower = file.name.toLowerCase();
+    let kind = "file";
+    if (lower.endsWith(".pdf")) kind = "pdf";
+    else if (/\.(png|jpe?g|gif|webp|bmp|heic|heif)$/i.test(lower)) kind = "image";
+    else if (/\.(m4a|aac|mp3|wav|webm|ogg|opus|flac)$/i.test(lower)) kind = "audio";
+
+    const id = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+    let indexText = "";
+
+    if (kind === "pdf") {
+      const buffer = await file.arrayBuffer();
+      const { extractTextFromPdfBuffer } = await import("./vault/extractPdfText.js");
+      indexText = await extractTextFromPdfBuffer(buffer);
+    } else if (kind === "image") {
+      showToast("Reading image text…");
+      const { extractTextFromImage } = await import("./vault/ocrImage.js");
+      indexText = await extractTextFromImage(file);
+      if (!indexText) indexText = `image screenshot ${file.name}`;
+    } else if (kind === "audio") {
+      showToast("Transcribing voice note…");
+      const { transcribeAudio } = await import("./vault/transcribe.js");
+      indexText = (await transcribeAudio(file)).trim();
+      if (!indexText) indexText = `voice note audio ${file.name}`;
+    } else {
+      indexText = `file attachment ${file.type || "binary"} ${file.name}`;
+    }
+
+    const tag = inferTagGuess(`${indexText} ${file.name}`);
+    if (storage === "opfs") {
+      await persistVaultBlob(vault, id, file);
+    } else if (fileHandle) {
+      await storeLinkedFileHandle(id, fileHandle);
+    }
+
+    const row = {
+      id,
+      name: file.name,
+      tag,
+      kind,
+      storage,
+      date: formatDate(createdAt),
+      size: formatBytes(file.size),
+      source: "local",
+      createdAt,
+      sizeBytes: file.size,
+    };
+    await indexAndPersistEmbedding(vault, id, row, indexText);
+
+    const entries = await loadManifest(vault);
+    const entry = {
+      id,
+      name: file.name,
+      tag,
+      kind,
+      createdAt,
+      sizeBytes: file.size,
+      mimeType: file.type || undefined,
+      storage,
+      ...(storage === "linked" && fileHandle?.name ? { linkedPath: fileHandle.name } : {}),
+    };
+    entries.push(entry);
+    await saveManifest(vault, entries);
+
+    setDocs((prev) => mergeDocs(prev, [row]));
+    showToast(
+      storage === "linked"
+        ? "Linked from disk (reads original file)"
+        : kind === "pdf"
+          ? "PDF indexed"
+          : kind === "audio"
+            ? "Voice note transcribed & indexed"
+            : kind === "image"
+              ? "Image OCR & indexed"
+              : "File saved to vault",
+    );
+  }, [indexAndPersistEmbedding, showToast]);
+
   const handleVaultFiles = useCallback(async (fileList) => {
     const file = fileList?.[0];
     if (!file) return;
@@ -810,75 +917,11 @@ export default function Silo() {
       if (vaultFileInputRef.current) vaultFileInputRef.current.value = "";
       return;
     }
-    const lower = file.name.toLowerCase();
-    let kind = "file";
-    if (lower.endsWith(".pdf")) kind = "pdf";
-    else if (/\.(png|jpe?g|gif|webp|bmp|heic|heif)$/i.test(lower)) kind = "image";
-    else if (/\.(m4a|aac|mp3|wav|webm|ogg|opus|flac)$/i.test(lower)) kind = "audio";
 
     setIngestError(null);
     setIngestBusy(true);
     try {
-      const id = crypto.randomUUID();
-      const createdAt = new Date().toISOString();
-      let indexText = "";
-
-      if (kind === "pdf") {
-        const buffer = await file.arrayBuffer();
-        const { extractTextFromPdfBuffer } = await import("./vault/extractPdfText.js");
-        indexText = await extractTextFromPdfBuffer(buffer);
-      } else if (kind === "image") {
-        showToast("Reading image text…");
-        const { extractTextFromImage } = await import("./vault/ocrImage.js");
-        indexText = await extractTextFromImage(file);
-        if (!indexText) indexText = `image screenshot ${file.name}`;
-      } else if (kind === "audio") {
-        showToast("Transcribing voice note…");
-        const { transcribeAudio } = await import("./vault/transcribe.js");
-        indexText = (await transcribeAudio(file)).trim();
-        if (!indexText) indexText = `voice note audio ${file.name}`;
-      } else {
-        indexText = `file attachment ${file.type || "binary"} ${file.name}`;
-      }
-
-      const tag = inferTagGuess(`${indexText} ${file.name}`);
-      await persistVaultBlob(vault, id, file);
-
-      const row = {
-        id,
-        name: file.name,
-        tag,
-        kind,
-        date: formatDate(createdAt),
-        size: formatBytes(file.size),
-        source: "local",
-        createdAt,
-        sizeBytes: file.size,
-      };
-      await indexAndPersistEmbedding(vault, id, row, indexText);
-
-      const entries = await loadManifest(vault);
-      entries.push({
-        id,
-        name: file.name,
-        tag,
-        kind,
-        createdAt,
-        sizeBytes: file.size,
-        mimeType: file.type || undefined,
-      });
-      await saveManifest(vault, entries);
-
-      setDocs((prev) => mergeDocs(prev, [row]));
-      showToast(
-        kind === "pdf"
-          ? "PDF indexed"
-          : kind === "audio"
-            ? "Voice note transcribed & indexed"
-            : kind === "image"
-              ? "Image OCR & indexed"
-              : "File saved to vault",
-      );
+      await ingestFromFile(file, { vault, storage: "opfs", fileHandle: null });
     } catch (err) {
       console.error(err);
       setIngestError(err?.message || "Could not save this file.");
@@ -886,7 +929,35 @@ export default function Silo() {
       setIngestBusy(false);
       if (vaultFileInputRef.current) vaultFileInputRef.current.value = "";
     }
-  }, [ensureVault, showToast, indexAndPersistEmbedding]);
+  }, [ensureVault, ingestFromFile]);
+
+  const handleLinkFromDisk = useCallback(async () => {
+    const vault = await ensureVault();
+    if (!vault) {
+      setIngestError("Private on-device storage (OPFS) is not available here. Use HTTPS or a supported browser.");
+      return;
+    }
+    if (!supportsNativeFileSystemLink()) {
+      setIngestError("Native file linking needs Chrome/Edge (File System Access API). Use “Add file” to copy into the vault.");
+      return;
+    }
+    setIngestError(null);
+    setIngestBusy(true);
+    try {
+      const [handle] = await pickFilesFromDisk();
+      const file = await handle.getFile();
+      await ingestFromFile(file, { vault, storage: "linked", fileHandle: handle });
+    } catch (err) {
+      if (err?.name === "AbortError") {
+        /* user cancelled */
+      } else {
+        console.error(err);
+        setIngestError(err?.message || "Could not link file.");
+      }
+    } finally {
+      setIngestBusy(false);
+    }
+  }, [ensureVault, ingestFromFile]);
 
   const handleSaveTextNote = useCallback(async (rawText) => {
     const text = rawText.trim();
@@ -983,6 +1054,7 @@ export default function Silo() {
       (async () => {
         if (doc.source === "local" && vaultRef.current) {
           await deleteVaultItem(vaultRef.current, String(doc.id));
+          await removeLinkedFileHandle(String(doc.id));
           const entries = await loadManifest(vaultRef.current);
           await saveManifest(vaultRef.current, entries.filter((e) => String(e.id) !== String(doc.id)));
         }
@@ -1005,7 +1077,7 @@ export default function Silo() {
     if (action === "Download") {
       (async () => {
         if (doc.source === "local" && vaultRef.current) {
-          const f = await readVaultBlobFile(vaultRef.current, String(doc.id));
+          const f = await resolveLocalFile(doc);
           if (f) {
             const url = URL.createObjectURL(f);
             const a = document.createElement("a");
@@ -1020,7 +1092,7 @@ export default function Silo() {
         showToast(`Downloading ${doc.name}…`);
       })();
     }
-  }, [showToast]);
+  }, [showToast, resolveLocalFile]);
 
   const handleRename = useCallback(async (renamedDoc, newName) => {
     const docId = renamedDoc.id;
@@ -1029,7 +1101,12 @@ export default function Silo() {
       const entries = await loadManifest(vaultRef.current);
       await saveManifest(
         vaultRef.current,
-        entries.map((e) => (e.id === String(docId) ? { ...e, name: newName } : e)),
+        entries.map((e) => {
+          if (e.id !== String(docId)) return e;
+          const next = { ...e, name: newName };
+          if (e.storage === "linked") next.linkedPath = newName;
+          return next;
+        }),
       );
       const txt = contentById[docId]
         ?? (await loadExtractedText(vaultRef.current, String(docId)))
@@ -1172,6 +1249,25 @@ export default function Silo() {
         </button>
         <button
           type="button"
+          onClick={() => { void handleLinkFromDisk(); }}
+          disabled={ingestBusy || !nativeLinkReady}
+          style={{
+            padding: "10px 18px",
+            borderRadius: 20,
+            border: "1px solid #3a3530",
+            background: nativeLinkReady ? "rgba(200,150,62,0.08)" : "rgba(30,30,30,0.5)",
+            color: nativeLinkReady && !ingestBusy ? "#C8963E" : "#3A3A38",
+            fontSize: 11,
+            cursor: ingestBusy || !nativeLinkReady ? "not-allowed" : "pointer",
+            fontFamily: "var(--mono)",
+            letterSpacing: "0.04em",
+          }}
+          title={nativeLinkReady ? "Index in vault but keep the file where it is (Chrome/Edge)" : "Requires Chromium desktop browser"}
+        >
+          Link from disk
+        </button>
+        <button
+          type="button"
           onClick={() => setNoteModalOpen(true)}
           disabled={ingestBusy}
           style={{
@@ -1189,7 +1285,9 @@ export default function Silo() {
           Text note
         </button>
         <span style={{ fontSize: 9, color: "#3A3A38", letterSpacing: "0.06em", flex: "1 1 140px" }}>
-          {opfsReady ? "PDF · image OCR · transcribed voice · semantic search" : "OPFS unavailable — demo only"}
+          {opfsReady
+            ? (nativeLinkReady ? "Add file (copy) · Link from disk · OCR · voice · search" : "Add file (copy) · OCR · voice · search — link needs Chrome/Edge")
+            : "OPFS unavailable — demo only"}
         </span>
       </div>
       {ingestError && (
@@ -1285,7 +1383,7 @@ export default function Silo() {
                         display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: 2, padding: 6,
                       }}>
                         <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.06em" }}>
-                          {kindLabel(doc.kind || "pdf")}
+                          {kindLabel(doc.kind || "pdf", doc.storage)}
                         </span>
                         <div style={{ height: 2, borderRadius: 1, background: "currentColor", width: "100%", opacity: 0.35 }} />
                         <div style={{ height: 2, borderRadius: 1, background: "currentColor", width: "55%", opacity: 0.25 }} />
