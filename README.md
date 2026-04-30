@@ -1,32 +1,54 @@
 # Silo
 
-**Silo** is a private, local-first document vault for the web. Keep PDFs, images, audio, and text notes on your device, search them with keywords and on-device semantic embeddings, and optionally encrypt indexed text with a passphrase. No server stores your files—data lives in the browser’s **Origin Private File System (OPFS)** when the environment supports it.
+**Silo** is a privacy-minded, **local-first** document vault that runs in the browser. Store PDFs, images, audio recordings, and text notes on your device; organize them with categories and smart views; and search with **full-text** and **on-device semantic** retrieval. Optional passphrase protection wraps indexed text at rest. Your files are not uploaded to an application server—when the browser supports it, data lives in the **Origin Private File System (OPFS)**.
 
-Built with **Vite**, **React 19**, and a small vault layer under `src/vault/`.
+This repository contains the web application: **Vite** + **React 19**, with vault logic under [`src/vault/`](src/vault/).
+
+[![Deploy to GitHub Pages](https://github.com/ruddvz/Silo/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/ruddvz/Silo/actions/workflows/deploy-pages.yml)
 
 ---
 
-## Features
+## Who it is for
 
-| Area | What you get |
-|------|----------------|
-| **Storage** | OPFS-backed vault on supported browsers; demo dataset when OPFS is unavailable |
-| **Ingest** | PDFs (text extraction), images (OCR), audio (transcription), plain text notes, optional **link from disk** (File System Access API on Chromium) |
-| **Search** | Full-text index (Orama) plus hybrid **semantic** search where embeddings run locally |
+Silo suits anyone who wants a **personal archive** of documents and snippets **without** handing originals to a cloud backend: receipts, IDs, leases, notes, voice memos, and screenshots—indexed and searchable **where you open the app**.
+
+---
+
+## Highlights
+
+| Domain | Capabilities |
+|--------|----------------|
+| **Storage** | OPFS-backed vault on supported browsers; seeded demo content when OPFS is unavailable |
+| **Ingest** | PDF text extraction, image OCR, audio transcription, plain notes; optional **link from disk** (File System Access API on Chromium) |
+| **Search** | Full-text index ([Orama](https://oramajs.org/)) plus **hybrid semantic** search with embeddings computed locally |
 | **Organization** | Categories (tags), smart views (e.g. recent, voice, screenshots), filters |
-| **Security & tools** | Optional vault passphrase for index text, integrity checks, repair, export/import **`.zip`** backups |
-| **PWA** | Web app manifest, service worker, share-target flow for importing shared content into the queue |
+| **Trust & recovery** | Optional vault passphrase for index text, integrity checks, repair tools, **ZIP** export/import for backups |
+| **Installable web app** | Web app manifest, service worker, and share-target flow for importing shared content into a queue |
 
-For **Android TWA**, **Capacitor**, and related notes, see `public/native/README.md` and `public/native/TWA.md`.
+Packaging notes for **Android TWA**, **Capacitor**, and related setups live in [`public/native/README.md`](public/native/README.md) and [`public/native/TWA.md`](public/native/TWA.md).
+
+---
+
+## Stack
+
+| Layer | Choices |
+|-------|---------|
+| UI | React 19, Framer Motion |
+| Build | Vite 6 |
+| Search | Orama (full-text), hybrid + vector helpers in-repo |
+| Documents | pdf.js (PDF), Tesseract.js (OCR), Transformers.js family (embeddings / transcription where enabled) |
+| Compression | fflate (ZIP backups) |
+
+Exact versions are pinned in [`package.json`](package.json).
 
 ---
 
 ## Requirements
 
-- **Node.js** 20+ (CI uses 22)
-- **npm** (or compatible client)
+- **Node.js** 20 or newer (continuous integration uses Node **22**)
+- **npm** or a compatible client
 
-For **OPFS** and full vault behavior, open the app from **`localhost`** or **HTTPS**. Plain `file://` or insecure origins may limit storage APIs.
+Use **`localhost`** or **HTTPS** so OPFS and related APIs behave as intended. Opening the build from **`file://`** or other restricted origins may limit storage and capabilities.
 
 ---
 
@@ -39,27 +61,27 @@ npm install
 npm run dev
 ```
 
-Open the URL Vite prints in a supported browser.
+Open the URL printed by Vite in a supported desktop or mobile browser.
 
-### Scripts
+### npm scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start Vite dev server |
-| `npm run build` | Production build + GitHub Pages post-build step |
+| Command | Purpose |
+|---------|---------|
+| `npm run dev` | Start the Vite development server |
+| `npm run build` | Production build plus GitHub Pages post-processing ([`scripts/gh-pages-postbuild.mjs`](scripts/gh-pages-postbuild.mjs)) |
 | `npm run preview` | Serve the production build locally |
-| `npm run lint` | ESLint |
+| `npm run lint` | Run ESLint |
 
 ---
 
 ## Configuration
 
-### Base path (GitHub Pages)
+### Base URL (GitHub Pages project sites)
 
-Project sites are served under `https://<user>.github.io/<repo>/`. The build uses `VITE_BASE_URL` so asset URLs resolve correctly.
+GitHub Pages serves project sites at `https://<user>.github.io/<repository>/`. Assets and the PWA manifest must use that base path.
 
-- **CI**: `.github/workflows/deploy-pages.yml` sets `VITE_BASE_URL=/<repository-name>/`.
-- **Local check** (replace `Silo` with your repo name if different):
+- **CI**: [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml) sets `VITE_BASE_URL=/<repository-name>/`.
+- **Local verification** (replace `Silo` if your fork uses another name):
 
 ```bash
 npm ci
@@ -68,37 +90,37 @@ mkdir -p _pages/Silo && cp -r dist/* _pages/Silo/
 npx --yes serve _pages
 ```
 
-Then open `http://localhost:<port>/Silo/` (port is printed by `serve`).
+Then open `http://localhost:<port>/Silo/` (the CLI prints the port).
 
 ---
 
 ## Deploying to GitHub Pages
 
-1. Ensure **Deploy to GitHub Pages** exists on your default branch (see `.github/workflows/deploy-pages.yml`).
-2. In the repository: **Settings → Pages → Build and deployment → Source: GitHub Actions** (not “Deploy from a branch”).
+1. Ensure the workflow **Deploy to GitHub Pages** exists on your default branch ([`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml)).
+2. In the repository: **Settings → Pages → Build and deployment**, set **Source** to **GitHub Actions** (not “Deploy from a branch”).
 3. Push to `main` or run **Actions → Deploy to GitHub Pages → Run workflow**.
 
-After a successful run, the site URL appears on the workflow summary and under **Settings → Pages**.
+After a successful run, the published URL appears in the workflow summary and under **Settings → Pages**.
 
-### If deploy fails with `HttpError: Not Found`
+### Deploy fails with `HttpError: Not Found`
 
-That usually means **Pages is not set to GitHub Actions** yet (or the setting is still saving).
+Usually **Pages** is not yet set to **GitHub Actions**, or the setting has not finished saving.
 
-1. **Settings → Pages → Build and deployment → Source** must be **GitHub Actions**.
-2. Save, wait a few seconds, then **re-run** the failed workflow (or push an empty commit).
+1. Confirm **Settings → Pages → Build and deployment → Source** is **GitHub Actions**.
+2. Wait a few seconds, then **re-run** the failed workflow or push an empty commit.
 
 The **build** job can succeed while **deploy** fails until that setting is correct.
 
 ---
 
-## Project layout
+## Repository layout
 
 ```
-├── public/           # Static assets, manifest, service worker, native docs
-├── scripts/          # Build helpers (e.g. GitHub Pages post-build)
+├── public/              Static assets, manifest, service worker, native/TWA docs
+├── scripts/             Build helpers (e.g. GitHub Pages manifest / SPA fallback)
 ├── src/
-│   ├── vault/        # OPFS, crypto, search, OCR, transcribe, backup, etc.
-│   ├── Silo.jsx      # Main app UI
+│   ├── vault/           OPFS, crypto, search, OCR, transcription, backup, …
+│   ├── Silo.jsx         Main application UI
 │   ├── main.jsx
 │   └── index.css
 ├── index.html
@@ -108,22 +130,22 @@ The **build** job can succeed while **deploy** fails until that setting is corre
 
 ---
 
-## Privacy model
+## Privacy and security
 
-- **Local-first**: Vault blobs and manifest live in OPFS when available; processing (OCR, transcription, embeddings) runs in the browser.
-- **Passphrase** (optional): Can wrap indexed text at rest; choose a strong passphrase and keep backups—loss of passphrase means loss of readable index text for encrypted entries.
-- **Linked files**: “Link from disk” indexes metadata/text while reading the original file from disk when permitted by the browser.
+- **Local-first**: Vault blobs and the manifest live in OPFS when the browser allows it; OCR, transcription, and embedding work run in the page.
+- **Optional passphrase**: Can protect indexed text at rest. Use a strong passphrase and keep backups—losing it can make encrypted index content unrecoverable.
+- **Linked files**: “Link from disk” keeps indexing metadata and text while reading originals from disk when the browser permits.
 
-Review `src/vault/` and browser permissions for your threat model before storing highly sensitive material.
+Treat `src/vault/` and your browser’s permission model as part of your threat assessment before storing highly sensitive material.
 
 ---
 
 ## Contributing
 
-Issues and pull requests are welcome. Please run `npm run lint` and `npm run build` before submitting when you change application code.
+Issues and pull requests are welcome. For application changes, please run `npm run lint` and `npm run build` before submitting.
 
 ---
 
 ## Acknowledgments
 
-Uses **Orama** for search, **pdf.js** for PDFs, **Tesseract.js** for OCR, **Transformers.js** / related stacks for on-device embeddings and transcription where configured, and **fflate** for zip backup handling. See `package.json` for exact packages and versions.
+Silo builds on **Orama**, **pdf.js**, **Tesseract.js**, **Transformers.js** (and related runtimes for on-device ML), **fflate**, and other dependencies listed in [`package.json`](package.json).
