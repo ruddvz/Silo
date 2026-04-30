@@ -46,7 +46,7 @@ async function deleteFileInVault(vault, subdir, name) {
 const MANIFEST = "manifest.json";
 
 /**
- * @typedef {"pdf" | "text" | "audio" | "file"} VaultKind
+ * @typedef {"pdf" | "text" | "audio" | "file" | "image"} VaultKind
  * @typedef {{
  *   id: string,
  *   name: string,
@@ -62,12 +62,13 @@ const MANIFEST = "manifest.json";
 function normalizeEntry(raw) {
   const id = String(raw.id);
   let kind = raw.kind;
-  if (!kind) {
-    const n = String(raw.name || "").toLowerCase();
-    if (n.endsWith(".pdf")) kind = "pdf";
-    else if (/\.(m4a|aac|mp3|wav|webm|ogg|opus|flac)$/i.test(n)) kind = "audio";
-    else kind = "file";
-  }
+    if (!kind) {
+      const n = String(raw.name || "").toLowerCase();
+      if (n.endsWith(".pdf")) kind = "pdf";
+      else if (/\.(png|jpe?g|gif|webp|bmp|heic|heif)$/i.test(n)) kind = "image";
+      else if (/\.(m4a|aac|mp3|wav|webm|ogg|opus|flac)$/i.test(n)) kind = "audio";
+      else kind = "file";
+    }
   return {
     id,
     name: raw.name,
@@ -95,7 +96,7 @@ export async function loadManifest(vault) {
 
 /** @param {FileSystemDirectoryHandle} vault @param {VaultManifestEntry[]} entries */
 export async function saveManifest(vault, entries) {
-  const json = JSON.stringify({ version: 2, entries }, null, 0);
+  const json = JSON.stringify({ version: 3, entries }, null, 0);
   const blob = new Blob([json], { type: "application/json" });
   const handle = await vault.getFileHandle(MANIFEST, { create: true });
   const writable = await handle.createWritable();
@@ -126,6 +127,30 @@ export async function loadExtractedText(vault, id) {
   return readTextFile(vault, "text", `${id}.txt`);
 }
 
+/** @param {FileSystemDirectoryHandle} vault @param {string} id @param {Float32Array} vec */
+export async function persistEmbedding(vault, id, vec) {
+  const arr = Array.from(vec);
+  await writeFileInVault(
+    vault,
+    "text",
+    `${id}.emb.json`,
+    new Blob([JSON.stringify({ dim: vec.length, v: arr })], { type: "application/json" }),
+  );
+}
+
+/** @param {FileSystemDirectoryHandle} vault @param {string} id @returns {Promise<Float32Array | null>} */
+export async function loadEmbedding(vault, id) {
+  const raw = await readTextFile(vault, "text", `${id}.emb.json`);
+  if (!raw) return null;
+  try {
+    const o = JSON.parse(raw);
+    if (o?.v && Array.isArray(o.v)) return Float32Array.from(o.v);
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 /**
  * @param {FileSystemDirectoryHandle} vault
  * @param {string} id
@@ -133,6 +158,7 @@ export async function loadExtractedText(vault, id) {
 export async function deleteVaultItem(vault, id) {
   await deleteFileInVault(vault, "files", id);
   await deleteFileInVault(vault, "text", `${id}.txt`);
+  await deleteFileInVault(vault, "text", `${id}.emb.json`);
 }
 
 /** @param {FileSystemDirectoryHandle} vault @param {string} id @returns {Promise<File | null>} */

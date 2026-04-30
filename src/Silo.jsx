@@ -9,8 +9,12 @@ import {
   loadExtractedText,
   deleteVaultItem,
   readVaultBlobFile,
+  persistEmbedding,
+  loadEmbedding,
 } from "./vault/opfs.js";
 import { buildVaultSearchIndex } from "./vault/searchIndex.js";
+import { topMatchingDocIds } from "./vault/vectorSearch.js";
+import { mergeSearchIds } from "./vault/hybridSearch.js";
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -76,8 +80,15 @@ const DEMO_TEXT_BODY = {
 function kindLabel(kind) {
   if (kind === "text") return "MSG";
   if (kind === "audio") return "MIC";
+  if (kind === "image") return "IMG";
   if (kind === "pdf") return "PDF";
   return "FILE";
+}
+
+function buildCombinedIndexText(doc, content) {
+  const k = doc.kind || "pdf";
+  const base = `${doc.name} ${doc.tag} ${k}`;
+  return `${base} ${content || ""}`.trim();
 }
 
 const SETTINGS_OPTIONS = [
@@ -120,6 +131,7 @@ function inferTagGuess(text) {
   if (/insurance|policy|premium|auto coverage/.test(t)) return "Insurance";
   if (/diploma|degree|university|college|education/.test(t)) return "Education";
   if (/whatsapp|telegram|signal|imessage|slack|discord|texted|fwd:|forwarded/.test(t)) return "Moments";
+  if (/screenshot|screen\s*shot|photo|camera|image|png|jpeg|jpg/.test(t)) return "Moments";
   return "Identity";
 }
 
@@ -491,6 +503,8 @@ export default function Silo() {
   const [ingestBusy,    setIngestBusy]    = useState(false);
   const [ingestError,   setIngestError]   = useState(null);
   const [noteModalOpen, setNoteModalOpen] = useState(false);
+  const [embeddingsById, setEmbeddingsById] = useState({});
+  const [queryVec, setQueryVec] = useState(null);
 
   const [contextMenu,   setContextMenu]   = useState(null);
   const [renameDoc,     setRenameDoc]     = useState(null);
@@ -623,6 +637,12 @@ export default function Silo() {
       }
       setDocs((prev) => mergeDocs(prev.filter((d) => d.source !== "local"), localRows));
       setContentById((prev) => ({ ...prev, ...contentUpdates }));
+      const embMap = {};
+      for (const e of entries) {
+        const emb = await loadEmbedding(vault, e.id);
+        if (emb) embMap[String(e.id)] = emb;
+      }
+      setEmbeddingsById((prev) => ({ ...prev, ...embMap }));
     })();
     return () => { cancelled = true; };
   }, []);
@@ -633,15 +653,72 @@ export default function Silo() {
       name: d.name,
       tag: d.tag,
       kind: d.kind || "pdf",
-      content: contentById[d.id] ?? "",
+      content: buildCombinedIndexText(d, contentById[d.id] ?? ""),
     }));
     return buildVaultSearchIndex(rows);
   }, [docs, contentById]);
 
+  // ── Demo docs: local embeddings for hybrid semantic search ──
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { embedText } = await import("./vault/embeddings.js");
+        const next = {};
+        for (const d of SEED_DOCS) {
+          const body = d.kind === "text" && DEMO_TEXT_BODY[d.id]
+            ? DEMO_TEXT_BODY[d.id]
+            : `${String(d.name).replace(/\.(pdf|txt)$/i, "").replace(/_/g, " ")} ${d.tag} ${DEMO_INDEX_BOOST[d.id] || ""}`;
+          const row = { ...d, kind: d.kind || "pdf" };
+          next[d.id] = await embedText(buildCombinedIndexText(row, body));
+        }
+        if (!cancelled) setEmbeddingsById((prev) => ({ ...next, ...prev }));
+      } catch (e) {
+        console.warn("Demo embeddings skipped", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // ── Query embedding (debounced) for semantic leg of search ──
+  useEffect(() => {
+    const t = query.trim();
+    if (!t) {
+      setQueryVec(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      (async () => {
+        try {
+          const { embedText } = await import("./vault/embeddings.js");
+          const v = await embedText(t);
+          if (!cancelled) setQueryVec(v);
+        } catch {
+          if (!cancelled) setQueryVec(null);
+        }
+      })();
+    }, 280);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query]);
+
   // ── Filtered display data ──
   const display = useMemo(() => {
     const q = query.trim();
-    const idSet = q ? searchIndex.matchingDocIds(q) : null;
+    let idSet = null;
+    if (q) {
+      const textIds = searchIndex.matchingDocIds(q);
+      const hasEmb = Object.keys(embeddingsById).length > 0;
+      if (queryVec && hasEmb) {
+        const vecIds = topMatchingDocIds(embeddingsById, queryVec, 0.28, 120);
+        idSet = mergeSearchIds(textIds, vecIds, 0.42);
+      } else {
+        idSet = textIds;
+      }
+    }
     const filtered = docs.filter((d) => {
       const tagOk = activeTag === "All" || d.tag === activeTag;
       const idOk = idSet == null || idSet.has(String(d.id));
@@ -655,7 +732,7 @@ export default function Silo() {
       if (items.length) acc[tag] = items;
       return acc;
     }, {});
-  }, [docs, activeTag, query, searchIndex]);
+  }, [docs, activeTag, query, searchIndex, embeddingsById, queryVec]);
 
   const hasResults = Object.keys(display).length > 0;
 
@@ -668,6 +745,16 @@ export default function Silo() {
     }
     return (mb / 1024).toFixed(1);
   }, [docs]);
+
+  const indexAndPersistEmbedding = useCallback(async (vault, id, docRow, indexText) => {
+    await persistExtractedText(vault, id, indexText);
+    const combined = buildCombinedIndexText(docRow, indexText);
+    const { embedText } = await import("./vault/embeddings.js");
+    const vec = await embedText(combined);
+    await persistEmbedding(vault, id, vec);
+    setContentById((prev) => ({ ...prev, [id]: indexText }));
+    setEmbeddingsById((prev) => ({ ...prev, [String(id)]: vec }));
+  }, []);
 
   const handleOpenDoc = useCallback(async (doc) => {
     const k = doc.kind || "pdf";
@@ -726,6 +813,7 @@ export default function Silo() {
     const lower = file.name.toLowerCase();
     let kind = "file";
     if (lower.endsWith(".pdf")) kind = "pdf";
+    else if (/\.(png|jpe?g|gif|webp|bmp|heic|heif)$/i.test(lower)) kind = "image";
     else if (/\.(m4a|aac|mp3|wav|webm|ogg|opus|flac)$/i.test(lower)) kind = "audio";
 
     setIngestError(null);
@@ -739,26 +827,22 @@ export default function Silo() {
         const buffer = await file.arrayBuffer();
         const { extractTextFromPdfBuffer } = await import("./vault/extractPdfText.js");
         indexText = await extractTextFromPdfBuffer(buffer);
+      } else if (kind === "image") {
+        showToast("Reading image text…");
+        const { extractTextFromImage } = await import("./vault/ocrImage.js");
+        indexText = await extractTextFromImage(file);
+        if (!indexText) indexText = `image screenshot ${file.name}`;
       } else if (kind === "audio") {
-        indexText = `voice note audio recording ${file.name}`;
+        showToast("Transcribing voice note…");
+        const { transcribeAudio } = await import("./vault/transcribe.js");
+        indexText = (await transcribeAudio(file)).trim();
+        if (!indexText) indexText = `voice note audio ${file.name}`;
       } else {
         indexText = `file attachment ${file.type || "binary"} ${file.name}`;
       }
 
       const tag = inferTagGuess(`${indexText} ${file.name}`);
       await persistVaultBlob(vault, id, file);
-      await persistExtractedText(vault, id, indexText);
-      const entries = await loadManifest(vault);
-      entries.push({
-        id,
-        name: file.name,
-        tag,
-        kind,
-        createdAt,
-        sizeBytes: file.size,
-        mimeType: file.type || undefined,
-      });
-      await saveManifest(vault, entries);
 
       const row = {
         id,
@@ -771,9 +855,30 @@ export default function Silo() {
         createdAt,
         sizeBytes: file.size,
       };
+      await indexAndPersistEmbedding(vault, id, row, indexText);
+
+      const entries = await loadManifest(vault);
+      entries.push({
+        id,
+        name: file.name,
+        tag,
+        kind,
+        createdAt,
+        sizeBytes: file.size,
+        mimeType: file.type || undefined,
+      });
+      await saveManifest(vault, entries);
+
       setDocs((prev) => mergeDocs(prev, [row]));
-      setContentById((prev) => ({ ...prev, [id]: indexText }));
-      showToast(kind === "pdf" ? "PDF indexed locally" : kind === "audio" ? "Voice note saved" : "File saved to vault");
+      showToast(
+        kind === "pdf"
+          ? "PDF indexed"
+          : kind === "audio"
+            ? "Voice note transcribed & indexed"
+            : kind === "image"
+              ? "Image OCR & indexed"
+              : "File saved to vault",
+      );
     } catch (err) {
       console.error(err);
       setIngestError(err?.message || "Could not save this file.");
@@ -781,7 +886,7 @@ export default function Silo() {
       setIngestBusy(false);
       if (vaultFileInputRef.current) vaultFileInputRef.current.value = "";
     }
-  }, [ensureVault, showToast]);
+  }, [ensureVault, showToast, indexAndPersistEmbedding]);
 
   const handleSaveTextNote = useCallback(async (rawText) => {
     const text = rawText.trim();
@@ -805,7 +910,19 @@ export default function Silo() {
       const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
 
       await persistVaultBlob(vault, id, blob);
-      await persistExtractedText(vault, id, text);
+      const row = {
+        id,
+        name,
+        tag,
+        kind: "text",
+        date: formatDate(createdAt),
+        size: formatBytes(sizeBytes),
+        source: "local",
+        createdAt,
+        sizeBytes,
+      };
+      await indexAndPersistEmbedding(vault, id, row, text);
+
       const entries = await loadManifest(vault);
       entries.push({
         id,
@@ -818,19 +935,7 @@ export default function Silo() {
       });
       await saveManifest(vault, entries);
 
-      const row = {
-        id,
-        name,
-        tag,
-        kind: "text",
-        date: formatDate(createdAt),
-        size: formatBytes(sizeBytes),
-        source: "local",
-        createdAt,
-        sizeBytes,
-      };
       setDocs((prev) => mergeDocs(prev, [row]));
-      setContentById((prev) => ({ ...prev, [id]: text }));
       showToast("Text note saved");
     } catch (err) {
       console.error(err);
@@ -838,9 +943,7 @@ export default function Silo() {
     } finally {
       setIngestBusy(false);
     }
-  }, [ensureVault, showToast]);
-
-  // ── Press handlers (tap vs long-press) ──
+  }, [ensureVault, showToast, indexAndPersistEmbedding]);
   const handlePointerDown = useCallback((doc, e) => {
     e.preventDefault();
     pressTimer.current = setTimeout(() => {
@@ -890,6 +993,11 @@ export default function Silo() {
         delete next[doc.id];
         return next;
       });
+      setEmbeddingsById((prev) => {
+        const next = { ...prev };
+        delete next[String(doc.id)];
+        return next;
+      });
       showToast(`Deleted ${doc.name}`);
       return;
     }
@@ -923,6 +1031,11 @@ export default function Silo() {
         vaultRef.current,
         entries.map((e) => (e.id === String(docId) ? { ...e, name: newName } : e)),
       );
+      const txt = contentById[docId]
+        ?? (await loadExtractedText(vaultRef.current, String(docId)))
+        ?? "";
+      const row = { ...renamedDoc, name: newName };
+      await indexAndPersistEmbedding(vaultRef.current, String(docId), row, txt);
     } else {
       const boost = typeof docId === "number" ? (DEMO_INDEX_BOOST[docId] || "") : "";
       const nm = newName.replace(/\.(pdf|txt)$/i, "").replace(/_/g, " ");
@@ -934,10 +1047,18 @@ export default function Silo() {
         ...prev,
         [docId]: body,
       }));
+      const row = { ...renamedDoc, name: newName };
+      try {
+        const { embedText } = await import("./vault/embeddings.js");
+        const vec = await embedText(buildCombinedIndexText(row, body));
+        setEmbeddingsById((prev) => ({ ...prev, [String(docId)]: vec }));
+      } catch {
+        /* embeddings optional */
+      }
     }
     setRenameDoc(null);
     showToast("Renamed successfully");
-  }, [showToast]);
+  }, [showToast, contentById, indexAndPersistEmbedding]);
 
   const handleQueryChange = (val) => {
     setQuery(val);
@@ -1026,7 +1147,7 @@ export default function Silo() {
         <input
           ref={vaultFileInputRef}
           type="file"
-          accept=".pdf,.m4a,.aac,.mp3,.wav,.webm,.ogg,.opus,.flac,application/pdf,audio/*"
+          accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.heic,.m4a,.aac,.mp3,.wav,.webm,.ogg,.opus,.flac,application/pdf,image/*,audio/*"
           style={{ display: "none" }}
           aria-hidden="true"
           onChange={(e) => { void handleVaultFiles(e.target.files); }}
@@ -1068,7 +1189,7 @@ export default function Silo() {
           Text note
         </button>
         <span style={{ fontSize: 9, color: "#3A3A38", letterSpacing: "0.06em", flex: "1 1 140px" }}>
-          {opfsReady ? "PDF · voice · paste like “message to self”" : "OPFS unavailable — demo only"}
+          {opfsReady ? "PDF · image OCR · transcribed voice · semantic search" : "OPFS unavailable — demo only"}
         </span>
       </div>
       {ingestError && (
@@ -1101,7 +1222,7 @@ export default function Silo() {
             exit={{ opacity: 0, height: 0 }}
             style={{ padding: "12px 28px 0", fontSize: 10, color: "#848480" }}
           >
-            Full-text search (titles + message / PDF text) for "{query}"
+            Hybrid search (keywords + on-device meaning) for "{query}"
           </motion.div>
         )}
       </AnimatePresence>

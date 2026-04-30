@@ -39,11 +39,11 @@ export function buildVaultSearchIndex(documents) {
   return {
     /**
      * @param {string} term
-     * @returns {Set<string> | null} null = no filter (empty query); otherwise docIds matching
+     * @returns {Set<string>}
      */
     matchingDocIds(term) {
       const t = term.trim();
-      if (!t) return null;
+      if (!t) return new Set();
       const res = search(db, {
         term: t,
         properties: ["content", "name"],
