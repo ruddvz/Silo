@@ -53,7 +53,7 @@ function putPendingShare(record) {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  if (event.request.method !== "POST" || url.pathname !== "/share") return;
+  if (event.request.method !== "POST" || !url.pathname.endsWith("/share")) return;
 
   event.respondWith(
     (async () => {
