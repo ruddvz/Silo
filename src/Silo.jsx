@@ -36,7 +36,27 @@ import { textContentFingerprint } from "./vault/textFingerprint.js";
 import { checkVaultIntegrity } from "./vault/integrity.js";
 import { repairVaultEntry } from "./vault/repair.js";
 import { summarizeExtractive } from "./vault/summarize.js";
-import logoUrl from "./assets/logo.svg";
+
+/** Same artwork as favicon / PWA manifest (`public/icons/icon.svg`) */
+const APP_ICON_SRC = `${import.meta.env.BASE_URL}icons/icon.svg`.replace(/\/{2,}/g, "/");
+
+/** Bottom sheet: never use left:50% + translateX here — Framer Motion overwrites `transform` and breaks centering. */
+const BOTTOM_SHEET_PANEL = {
+  position: "fixed",
+  bottom: 0,
+  left: 0,
+  right: 0,
+  marginLeft: "auto",
+  marginRight: "auto",
+  width: "100%",
+  maxWidth: 480,
+  boxSizing: "border-box",
+  background: "#111",
+  borderTop: "1px solid #1E1E1E",
+  borderRadius: "24px 24px 0 0",
+  padding: "20px 28px calc(28px + env(safe-area-inset-bottom, 0px))",
+  zIndex: 1200,
+};
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -260,12 +280,12 @@ function RenameModal({ doc, onConfirm, onCancel }) {
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          style={{
-            width: "100%", boxSizing: "border-box",
-            background: "#1A1A1A", border: "1px solid #2a2a2a", borderRadius: 12,
-            padding: "10px 14px", color: "#EDECEA", fontSize: 14,
-            fontFamily: "'JetBrains Mono', monospace", outline: "none",
-          }}
+        style={{
+          width: "100%", boxSizing: "border-box",
+          background: "#1A1A1A", border: "1px solid #2a2a2a", borderRadius: 12,
+          padding: "10px 14px", color: "#EDECEA", fontSize: 16,
+          fontFamily: "'JetBrains Mono', monospace", outline: "none",
+        }}
         />
         <div style={{ fontSize: 10, color: "#3A3A38", marginTop: 8 }}>{ext ? `Keeps extension ${ext}` : "No extension enforced"}</div>
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
@@ -354,7 +374,7 @@ function NoteModal({ onSave, onCancel }) {
           style={{
             width: "100%", boxSizing: "border-box", resize: "vertical", minHeight: 140,
             background: "#1A1A1A", border: "1px solid #2a2a2a", borderRadius: 12,
-            padding: "12px 14px", color: "#EDECEA", fontSize: 13,
+            padding: "12px 14px", color: "#EDECEA", fontSize: 16,
             fontFamily: "'JetBrains Mono', monospace", outline: "none",
           }}
         />
@@ -419,13 +439,7 @@ function SettingsDrawer({ onClose, actions }) {
       <motion.div
         initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
         transition={{ type: "spring", damping: 28, stiffness: 300 }}
-        style={{
-          position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
-          width: "100%", maxWidth: 480,
-          background: "#111", borderTop: "1px solid #1E1E1E",
-          borderRadius: "24px 24px 0 0", padding: "20px 28px 48px",
-          zIndex: 1200,
-        }}
+        style={BOTTOM_SHEET_PANEL}
         role="dialog" aria-modal="true" aria-label="Settings"
       >
         <div style={{ width: 36, height: 4, background: "#2a2a2a", borderRadius: 2, margin: "0 auto 20px" }} />
@@ -488,13 +502,7 @@ function ContextMenu({ doc, onAction, onClose }) {
       <motion.div
         initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
         transition={{ type: "spring", damping: 28, stiffness: 300 }}
-        style={{
-          position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
-          width: "100%", maxWidth: 480,
-          background: "#111", borderTop: "1px solid #1E1E1E",
-          borderRadius: "24px 24px 0 0", padding: "20px 28px 48px",
-          zIndex: 1200,
-        }}
+        style={BOTTOM_SHEET_PANEL}
         role="dialog" aria-modal="true" aria-label={`Actions for ${doc.name}`}
       >
         <div style={{ width: 36, height: 4, background: "#2a2a2a", borderRadius: 2, margin: "0 auto 20px" }} />
@@ -639,6 +647,7 @@ export default function Silo() {
         --mono: 'JetBrains Mono', monospace;
       }
       body { background: var(--bg); color: var(--t1); font-family: var(--mono); margin: 0; }
+      html { -webkit-text-size-adjust: 100%; }
       *:focus-visible {
         outline: 2px solid var(--amber);
         outline-offset: 2px;
@@ -646,6 +655,7 @@ export default function Silo() {
       }
       .vault-root {
         max-width: 480px; margin: 0 auto; min-height: 100svh;
+        padding-top: max(10px, env(safe-area-inset-top, 0px));
         padding-bottom: 120px; position: relative;
       }
       .vault-root::after {
@@ -663,7 +673,10 @@ export default function Silo() {
       .doc-card:hover  { border-color: #2a2a2a; }
       .doc-card:focus  { border-color: var(--amber); }
       .search-pill {
-        position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+        position: fixed;
+        bottom: max(30px, env(safe-area-inset-bottom, 0px));
+        left: 50%;
+        transform: translateX(-50%);
         width: calc(100% - 56px); max-width: 424px;
         background: rgba(17,17,17,0.9); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
         border: 1px solid #282828; border-radius: 24px; padding: 14px 20px;
@@ -672,7 +685,7 @@ export default function Silo() {
       }
       .search-input {
         background: transparent; border: none; outline: none; color: #fff;
-        font-family: var(--mono); font-size: 14px; flex: 1;
+        font-family: var(--mono); font-size: 16px; flex: 1; min-height: 1.25em;
       }
       .icon-btn {
         background: transparent; border: none; cursor: pointer;
@@ -680,15 +693,11 @@ export default function Silo() {
         border-radius: 6px; transition: color 0.15s;
       }
       .icon-btn:hover { color: #EDECEA; }
-      .vault-toolbar {
-        display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px;
-        padding: 0 28px 8px;
-      }
       .vault-select {
         appearance: none; -webkit-appearance: none;
         background: #111 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23848480' d='M3 4.5L6 7.5L9 4.5'/%3E%3C/svg%3E") no-repeat right 12px center;
         border: 1px solid #282828; border-radius: 12px;
-        padding: 10px 34px 10px 14px; color: #EDECEA; font-size: 12px;
+        padding: 10px 34px 10px 14px; color: #EDECEA; font-size: 16px;
         font-family: var(--mono); cursor: pointer; min-width: 0;
         max-width: 100%;
       }
@@ -697,20 +706,20 @@ export default function Silo() {
       .add-menu-trigger {
         display: inline-flex; align-items: center; gap: 8px;
         padding: 10px 16px; border-radius: 12px; border: 1px solid #282828;
-        background: #111; color: #EDECEA; font-size: 12px; font-family: var(--mono);
+        background: #111; color: #EDECEA; font-size: 16px; font-family: var(--mono);
         cursor: pointer; letter-spacing: 0.04em;
       }
       .add-menu-trigger:disabled { opacity: 0.45; cursor: not-allowed; }
       .add-menu-trigger:hover:not(:disabled) { border-color: #3a3a3a; }
       .add-menu-panel {
-        position: absolute; top: calc(100% + 8px); left: 0; min-width: 220px;
+        position: absolute; top: calc(100% + 8px); right: 0; left: auto; min-width: 220px;
         background: #111; border: 1px solid #282828; border-radius: 14px;
         padding: 6px; z-index: 60; box-shadow: 0 16px 48px rgba(0,0,0,0.55);
       }
       .add-menu-item {
         display: block; width: 100%; text-align: left; padding: 11px 14px;
         border: none; border-radius: 10px; background: transparent; color: #EDECEA;
-        font-size: 12px; font-family: var(--mono); cursor: pointer;
+        font-size: 16px; font-family: var(--mono); cursor: pointer;
       }
       .add-menu-item:hover:not(:disabled) { background: #1A1A1A; }
       .add-menu-item:disabled { color: #3A3A38; cursor: not-allowed; }
@@ -1508,28 +1517,6 @@ export default function Silo() {
     },
     { id: "clearshares", label: "Clear pending shares queue", icon: "⊘", onSelect: () => { void handleClearShareQueue(); } },
     {
-      id: "sharetips",
-      label: "Share target tips (PWA)",
-      icon: "ⓘ",
-      keepOpen: true,
-      onSelect: () => {
-        const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
-        const iOS = /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-        const lines = iOS
-          ? [
-            "iOS: Share → installed PWA is inconsistent in Safari.",
-            "Use + Add file or Text note as the reliable path.",
-            "For parity with Android share, use the native shell (Capacitor) README.",
-          ]
-          : [
-            "Android: Install from Chrome → Add to Home screen, then Share → Silo.",
-            "If imports stall, open Silo once; failed items show Retry in settings.",
-            "Chrome may sync the queue in the background when the tab was open before.",
-          ];
-        showToast(lines.join(" "));
-      },
-    },
-    {
       id: "pass",
       label: "Set vault passphrase (encrypts index text)",
       icon: "🔒",
@@ -1583,18 +1570,6 @@ export default function Silo() {
           setIngestBusy(false);
         }
       },
-    },
-    {
-      id: "cap",
-      label: "Native shell (Capacitor) — README",
-      icon: "📱",
-      onSelect: () => { window.open("/native/README.md", "_blank", "noopener,noreferrer"); },
-    },
-    {
-      id: "twa",
-      label: "Android TWA — README",
-      icon: "▣",
-      onSelect: () => { window.open("/native/TWA.md", "_blank", "noopener,noreferrer"); },
     },
   ], [
     handleExportVaultZip,
@@ -1754,161 +1729,154 @@ export default function Silo() {
   return (
     <div className="vault-root">
 
-      {/* ── Top Bar ── */}
-      <div style={{ display: "flex", justifyContent: "space-between", padding: "48px 28px 24px", alignItems: "center", gap: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
-          <img
-            src={logoUrl}
-            alt=""
-            width={40}
-            height={40}
-            style={{ borderRadius: 12, flexShrink: 0, objectFit: "cover" }}
-          />
-          <div style={{ minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{
-                fontSize: 14, fontWeight: 600, letterSpacing: "0.14em",
-                color: "#EDECEA", fontFamily: "var(--mono)",
-              }}>
-                SILO
-              </span>
-              <span
-                style={{
-                  width: 6, height: 6, borderRadius: "50%",
-                  background: opfsReady ? "#6BBF7A" : "#5a5a58",
-                  boxShadow: opfsReady ? "0 0 8px rgba(107,191,122,0.5)" : "none",
-                  flexShrink: 0,
-                }}
-                title={opfsReady ? "Vault ready" : "Demo mode"}
-                aria-hidden
-              />
-            </div>
-            <div style={{ fontSize: 10, color: "#3A3A38", marginTop: 4, letterSpacing: "0.06em" }}>
-              {docs.length} items · {totalGB} GB
-            </div>
-          </div>
-        </div>
-
-        <button
-          className="icon-btn"
-          onClick={() => setSettingsOpen(true)}
-          aria-label="Open settings"
-          type="button"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
-        </button>
-      </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        style={{ padding: "0 28px 20px" }}
-      >
-        <h1 style={{
-          margin: 0, fontSize: 22, fontWeight: 600, letterSpacing: "-0.03em",
-          color: "#EDECEA", fontFamily: "var(--mono)",
-        }}>
-          Your vault
-        </h1>
-        <p style={{ margin: "8px 0 0", fontSize: 12, color: "#848480", lineHeight: 1.5, maxWidth: 420 }}>
-          Private documents, voice, and images — searchable on this device.
-        </p>
-        {import.meta.env.BASE_URL !== "/" && (
-          <div style={{ marginTop: 12, fontSize: 9, color: "#5a5a58", letterSpacing: "0.08em" }}>
-            GitHub Pages · {import.meta.env.BASE_URL.replace(/\//g, "") || "root"}
-          </div>
-        )}
-      </motion.div>
-
-      <div className="vault-toolbar">
-        <input
-          ref={backupImportRef}
-          type="file"
-          accept=".zip,application/zip"
-          style={{ display: "none" }}
-          aria-hidden="true"
-          onChange={(e) => { void handleMergeBackupZip(e.target.files); }}
-        />
-        <input
-          ref={vaultFileInputRef}
-          type="file"
-          accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.heic,.m4a,.aac,.mp3,.wav,.webm,.ogg,.opus,.flac,application/pdf,image/*,audio/*"
-          style={{ display: "none" }}
-          aria-hidden="true"
-          onChange={(e) => { void handleVaultFiles(e.target.files); }}
-        />
-        <div ref={addMenuRef} style={{ position: "relative" }}>
-          <button
-            type="button"
-            className="add-menu-trigger"
-            disabled={ingestBusy}
-            aria-expanded={addMenuOpen}
-            aria-haspopup="menu"
-            onClick={() => setAddMenuOpen((o) => !o)}
-          >
-            {ingestBusy ? "Saving…" : "Add"}
-            <span style={{ fontSize: 10, color: "#848480", marginLeft: 2 }} aria-hidden>▾</span>
-          </button>
-          <AnimatePresence>
-            {addMenuOpen && !ingestBusy && (
-              <motion.div
-                role="menu"
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.15 }}
-                className="add-menu-panel"
-              >
-                <div className="add-menu-hint">Copy into vault, link a file, or save a note.</div>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="add-menu-item"
-                  onClick={() => { setAddMenuOpen(false); handlePickVaultFile(); }}
-                >
-                  Add file…
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="add-menu-item"
-                  disabled={!nativeLinkReady}
-                  title={nativeLinkReady ? "Keep file on disk (Chrome/Edge)" : "Requires Chromium desktop"}
-                  onClick={() => {
-                    setAddMenuOpen(false);
-                    void handleLinkFromDisk();
+      {/* ── Header + title + Add ── */}
+      <div style={{ padding: "8px 28px 12px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
+            <img
+              src={APP_ICON_SRC}
+              alt=""
+              width={36}
+              height={36}
+              style={{ borderRadius: 10, flexShrink: 0, objectFit: "contain" }}
+            />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{
+                  fontSize: 13, fontWeight: 600, letterSpacing: "0.14em",
+                  color: "#EDECEA", fontFamily: "var(--mono)",
+                }}>
+                  SILO
+                </span>
+                <span
+                  style={{
+                    width: 6, height: 6, borderRadius: "50%",
+                    background: opfsReady ? "#6BBF7A" : "#5a5a58",
+                    boxShadow: opfsReady ? "0 0 8px rgba(107,191,122,0.5)" : "none",
+                    flexShrink: 0,
                   }}
-                >
-                  Link from disk…
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="add-menu-item"
-                  onClick={() => { setAddMenuOpen(false); setNoteModalOpen(true); }}
-                >
-                  Text note…
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-        {(importQueueCount > 0 || !opfsReady) && (
-          <div style={{ fontSize: 11, color: "#3A3A38", flex: "1 1 200px", lineHeight: 1.45 }}>
-            {importQueueCount > 0 && (
-              <span style={{ color: shareQueueFailedCount > 0 ? "#C8963E" : "#5BC8C4", display: "block" }}>
-                {shareQueueFailedCount > 0
-                  ? `${shareQueueFailedCount} share import(s) failed — Settings → Retry`
-                  : `${importQueueCount} share(s) queued`}
-              </span>
-            )}
-            {!opfsReady && <span>On-device vault unavailable here — demo only.</span>}
+                  title={opfsReady ? "Vault ready" : "Demo mode"}
+                  aria-hidden
+                />
+              </div>
+              <div style={{ fontSize: 10, color: "#3A3A38", marginTop: 3, letterSpacing: "0.05em" }}>
+                {docs.length} items · {totalGB} GB
+              </div>
+            </div>
           </div>
-        )}
+          <button
+            className="icon-btn"
+            onClick={() => setSettingsOpen(true)}
+            aria-label="Open settings"
+            type="button"
+            style={{ flexShrink: 0, marginTop: 2 }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, marginTop: 14 }}>
+          <motion.h1
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            style={{
+              margin: 0, fontSize: 22, fontWeight: 600, letterSpacing: "-0.03em",
+              color: "#EDECEA", fontFamily: "var(--mono)", flex: 1, minWidth: 0,
+            }}
+          >
+            Your vault
+          </motion.h1>
+          <div ref={addMenuRef} style={{ position: "relative", flexShrink: 0 }}>
+            <input
+              ref={backupImportRef}
+              type="file"
+              accept=".zip,application/zip"
+              style={{ display: "none" }}
+              aria-hidden="true"
+              onChange={(e) => { void handleMergeBackupZip(e.target.files); }}
+            />
+            <input
+              ref={vaultFileInputRef}
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.heic,.m4a,.aac,.mp3,.wav,.webm,.ogg,.opus,.flac,application/pdf,image/*,audio/*"
+              style={{ display: "none" }}
+              aria-hidden="true"
+              onChange={(e) => { void handleVaultFiles(e.target.files); }}
+            />
+            <button
+              type="button"
+              className="add-menu-trigger"
+              disabled={ingestBusy}
+              aria-expanded={addMenuOpen}
+              aria-haspopup="menu"
+              onClick={() => setAddMenuOpen((o) => !o)}
+            >
+              {ingestBusy ? "Saving…" : "Add"}
+              <span style={{ fontSize: 10, color: "#848480", marginLeft: 2 }} aria-hidden>▾</span>
+            </button>
+            <AnimatePresence>
+              {addMenuOpen && !ingestBusy && (
+                <motion.div
+                  role="menu"
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.15 }}
+                  className="add-menu-panel"
+                >
+                  <div className="add-menu-hint">Copy into vault, link a file, or save a note.</div>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="add-menu-item"
+                    onClick={() => { setAddMenuOpen(false); handlePickVaultFile(); }}
+                  >
+                    Add file…
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="add-menu-item"
+                    disabled={!nativeLinkReady}
+                    title={nativeLinkReady ? "Keep file on disk (Chrome/Edge)" : "Requires Chromium desktop"}
+                    onClick={() => {
+                      setAddMenuOpen(false);
+                      void handleLinkFromDisk();
+                    }}
+                  >
+                    Link from disk…
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="add-menu-item"
+                    onClick={() => { setAddMenuOpen(false); setNoteModalOpen(true); }}
+                  >
+                    Text note…
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
       </div>
+
+      {(importQueueCount > 0 || !opfsReady) && (
+        <div style={{ padding: "0 28px 10px", fontSize: 11, color: "#3A3A38", lineHeight: 1.45 }}>
+          {importQueueCount > 0 && (
+            <span style={{ color: shareQueueFailedCount > 0 ? "#C8963E" : "#5BC8C4", display: "block" }}>
+              {shareQueueFailedCount > 0
+                ? `${shareQueueFailedCount} share import(s) failed — Settings → Retry`
+                : `${importQueueCount} share(s) queued`}
+            </span>
+          )}
+          {!opfsReady && <span>On-device vault unavailable here — demo only.</span>}
+        </div>
+      )}
+
       {ingestError && (
         <div style={{ padding: "0 28px 12px", fontSize: 11, color: "#C86E8A" }}>
           {ingestError}
