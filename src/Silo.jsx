@@ -36,6 +36,7 @@ import { textContentFingerprint } from "./vault/textFingerprint.js";
 import { checkVaultIntegrity } from "./vault/integrity.js";
 import { repairVaultEntry } from "./vault/repair.js";
 import { summarizeExtractive } from "./vault/summarize.js";
+import logoUrl from "./assets/logo.svg";
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -564,6 +565,8 @@ export default function Silo() {
   const vaultFileInputRef = useRef(null);
   const backupImportRef = useRef(null);
   const processAllPendingSharesRef = useRef(async () => {});
+  const addMenuRef = useRef(null);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
 
   useEffect(() => {
     if (vaultPassphrase) sessionStorage.setItem("silo_vault_pass", vaultPassphrase);
@@ -605,6 +608,20 @@ export default function Silo() {
   }, []);
 
   useEffect(() => {
+    if (!addMenuOpen) return;
+    const close = (e) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target)) setAddMenuOpen(false);
+    };
+    const onKey = (e) => { if (e.key === "Escape") setAddMenuOpen(false); };
+    document.addEventListener("pointerdown", close, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", close, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [addMenuOpen]);
+
+  useEffect(() => {
     styleInjected.current = true;
 
     const link = document.createElement("link");
@@ -637,16 +654,6 @@ export default function Silo() {
         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
         opacity: 0.4; z-index: 999;
       }
-      .tag-strip { display: flex; gap: 8px; padding: 0 28px; overflow-x: auto; scrollbar-width: none; }
-      .tag-strip::-webkit-scrollbar { display: none; }
-      .tag-pill {
-        padding: 6px 14px; border-radius: 20px; border: 1px solid #1E1E1E;
-        font-size: 10px; color: #3A3A38; cursor: pointer; white-space: nowrap;
-        transition: background 0.15s, color 0.15s, border-color 0.15s;
-        font-family: var(--mono); background: transparent;
-      }
-      .tag-pill:hover { border-color: #2a2a2a; color: #848480; }
-      .tag-pill.active { background: var(--amber); border-color: var(--amber); color: #000; font-weight: 600; }
       .doc-card {
         background: #0D0D0D; border: 1px solid #1E1E1E; border-radius: 22px;
         padding: 16px; margin: 0 28px 10px; display: flex; align-items: center; gap: 15px;
@@ -673,6 +680,41 @@ export default function Silo() {
         border-radius: 6px; transition: color 0.15s;
       }
       .icon-btn:hover { color: #EDECEA; }
+      .vault-toolbar {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px;
+        padding: 0 28px 8px;
+      }
+      .vault-select {
+        appearance: none; -webkit-appearance: none;
+        background: #111 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23848480' d='M3 4.5L6 7.5L9 4.5'/%3E%3C/svg%3E") no-repeat right 12px center;
+        border: 1px solid #282828; border-radius: 12px;
+        padding: 10px 34px 10px 14px; color: #EDECEA; font-size: 12px;
+        font-family: var(--mono); cursor: pointer; min-width: 0;
+        max-width: 100%;
+      }
+      .vault-select:hover { border-color: #3a3a3a; }
+      .vault-select:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+      .add-menu-trigger {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 10px 16px; border-radius: 12px; border: 1px solid #282828;
+        background: #111; color: #EDECEA; font-size: 12px; font-family: var(--mono);
+        cursor: pointer; letter-spacing: 0.04em;
+      }
+      .add-menu-trigger:disabled { opacity: 0.45; cursor: not-allowed; }
+      .add-menu-trigger:hover:not(:disabled) { border-color: #3a3a3a; }
+      .add-menu-panel {
+        position: absolute; top: calc(100% + 8px); left: 0; min-width: 220px;
+        background: #111; border: 1px solid #282828; border-radius: 14px;
+        padding: 6px; z-index: 60; box-shadow: 0 16px 48px rgba(0,0,0,0.55);
+      }
+      .add-menu-item {
+        display: block; width: 100%; text-align: left; padding: 11px 14px;
+        border: none; border-radius: 10px; background: transparent; color: #EDECEA;
+        font-size: 12px; font-family: var(--mono); cursor: pointer;
+      }
+      .add-menu-item:hover:not(:disabled) { background: #1A1A1A; }
+      .add-menu-item:disabled { color: #3A3A38; cursor: not-allowed; }
+      .add-menu-hint { font-size: 10px; color: #3A3A38; padding: 6px 14px 4px; line-height: 1.4; }
     `;
     document.head.appendChild(style);
   }, []);
@@ -1713,33 +1755,45 @@ export default function Silo() {
     <div className="vault-root">
 
       {/* ── Top Bar ── */}
-      <div style={{ display: "flex", justifyContent: "space-between", padding: "60px 28px 20px", alignItems: "center" }}>
-
-        {/* SILO wordmark with icon + live dot */}
-        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-          <svg width="16" height="20" viewBox="0 0 16 20" fill="none" aria-hidden="true">
-            {/* dome cap */}
-            <rect x="0" y="4" width="16" height="5" rx="8" fill="#EDECEA" opacity="0.92" />
-            {/* body */}
-            <rect x="2" y="7" width="12" height="12" rx="1" fill="#EDECEA" opacity="0.92" />
-          </svg>
-          <span style={{
-            fontSize: 13, fontWeight: 700, letterSpacing: "0.25em",
-            color: "#EDECEA", fontFamily: "'JetBrains Mono', monospace",
-          }}>
-            SILO
-          </span>
-          <div style={{
-            width: 5, height: 5, borderRadius: "50%",
-            background: "#6BBF7A", boxShadow: "0 0 7px #6BBF7A",
-          }} />
+      <div style={{ display: "flex", justifyContent: "space-between", padding: "48px 28px 24px", alignItems: "center", gap: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
+          <img
+            src={logoUrl}
+            alt=""
+            width={40}
+            height={40}
+            style={{ borderRadius: 12, flexShrink: 0, objectFit: "cover" }}
+          />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{
+                fontSize: 14, fontWeight: 600, letterSpacing: "0.14em",
+                color: "#EDECEA", fontFamily: "var(--mono)",
+              }}>
+                SILO
+              </span>
+              <span
+                style={{
+                  width: 6, height: 6, borderRadius: "50%",
+                  background: opfsReady ? "#6BBF7A" : "#5a5a58",
+                  boxShadow: opfsReady ? "0 0 8px rgba(107,191,122,0.5)" : "none",
+                  flexShrink: 0,
+                }}
+                title={opfsReady ? "Vault ready" : "Demo mode"}
+                aria-hidden
+              />
+            </div>
+            <div style={{ fontSize: 10, color: "#3A3A38", marginTop: 4, letterSpacing: "0.06em" }}>
+              {docs.length} items · {totalGB} GB
+            </div>
+          </div>
         </div>
 
-        {/* Settings gear */}
         <button
           className="icon-btn"
           onClick={() => setSettingsOpen(true)}
           aria-label="Open settings"
+          type="button"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="3" />
@@ -1748,45 +1802,28 @@ export default function Silo() {
         </button>
       </div>
 
-      {/* ── Hero — split layout ── */}
       <motion.div
-        initial={{ opacity: 0, y: 10 }}
+        initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        style={{ padding: "0 28px 30px" }}
+        style={{ padding: "0 28px 20px" }}
       >
-        {/* Row 1: "Your"  ←→  "12 files" */}
-        <div style={{
-          display: "flex", justifyContent: "space-between",
-          alignItems: "baseline", lineHeight: 1,
+        <h1 style={{
+          margin: 0, fontSize: 22, fontWeight: 600, letterSpacing: "-0.03em",
+          color: "#EDECEA", fontFamily: "var(--mono)",
         }}>
-          <span style={{ fontSize: 38, fontWeight: 700, letterSpacing: "-0.05em" }}>
-            Your
-          </span>
-          <span style={{ fontSize: 10, color: "#3A3A38", textTransform: "uppercase", letterSpacing: "0.12em" }}>
-            {docs.length} items
-          </span>
-        </div>
-
-        {/* Row 2: "documents."  ←→  "X.X GB total" */}
-        <div style={{
-          display: "flex", justifyContent: "space-between",
-          alignItems: "baseline", lineHeight: 1, marginTop: 2,
-        }}>
-          <em style={{ fontSize: 38, fontStyle: "italic", fontWeight: 300, color: "#848480", letterSpacing: "-0.05em" }}>
-            vault.
-          </em>
-          <span style={{ fontSize: 10, color: "#3A3A38", textTransform: "uppercase", letterSpacing: "0.12em" }}>
-            {totalGB} GB total
-          </span>
-        </div>
+          Your vault
+        </h1>
+        <p style={{ margin: "8px 0 0", fontSize: 12, color: "#848480", lineHeight: 1.5, maxWidth: 420 }}>
+          Private documents, voice, and images — searchable on this device.
+        </p>
         {import.meta.env.BASE_URL !== "/" && (
-          <div style={{ marginTop: 10, fontSize: 9, color: "#5a5a58", letterSpacing: "0.08em" }}>
+          <div style={{ marginTop: 12, fontSize: 9, color: "#5a5a58", letterSpacing: "0.08em" }}>
             GitHub Pages · {import.meta.env.BASE_URL.replace(/\//g, "") || "root"}
           </div>
         )}
       </motion.div>
 
-      <div style={{ padding: "0 28px 16px", display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+      <div className="vault-toolbar">
         <input
           ref={backupImportRef}
           type="file"
@@ -1803,73 +1840,74 @@ export default function Silo() {
           aria-hidden="true"
           onChange={(e) => { void handleVaultFiles(e.target.files); }}
         />
-        <button
-          type="button"
-          onClick={handlePickVaultFile}
-          disabled={ingestBusy}
-          style={{
-            padding: "10px 18px",
-            borderRadius: 20,
-            border: "1px solid #282828",
-            background: "rgba(17,17,17,0.6)",
-            color: ingestBusy ? "#3A3A38" : "#EDECEA",
-            fontSize: 11,
-            cursor: ingestBusy ? "wait" : "pointer",
-            fontFamily: "var(--mono)",
-            letterSpacing: "0.04em",
-          }}
-        >
-          {ingestBusy ? "Saving…" : "+ Add file"}
-        </button>
-        <button
-          type="button"
-          onClick={() => { void handleLinkFromDisk(); }}
-          disabled={ingestBusy || !nativeLinkReady}
-          style={{
-            padding: "10px 18px",
-            borderRadius: 20,
-            border: "1px solid #3a3530",
-            background: nativeLinkReady ? "rgba(200,150,62,0.08)" : "rgba(30,30,30,0.5)",
-            color: nativeLinkReady && !ingestBusy ? "#C8963E" : "#3A3A38",
-            fontSize: 11,
-            cursor: ingestBusy || !nativeLinkReady ? "not-allowed" : "pointer",
-            fontFamily: "var(--mono)",
-            letterSpacing: "0.04em",
-          }}
-          title={nativeLinkReady ? "Index in vault but keep the file where it is (Chrome/Edge)" : "Requires Chromium desktop browser"}
-        >
-          Link from disk
-        </button>
-        <button
-          type="button"
-          onClick={() => setNoteModalOpen(true)}
-          disabled={ingestBusy}
-          style={{
-            padding: "10px 18px",
-            borderRadius: 20,
-            border: "1px solid #2a3a38",
-            background: "rgba(91,200,196,0.08)",
-            color: ingestBusy ? "#3A3A38" : "#5BC8C4",
-            fontSize: 11,
-            cursor: ingestBusy ? "wait" : "pointer",
-            fontFamily: "var(--mono)",
-            letterSpacing: "0.04em",
-          }}
-        >
-          Text note
-        </button>
-        <span style={{ fontSize: 9, color: "#3A3A38", letterSpacing: "0.06em", flex: "1 1 140px" }}>
-          {importQueueCount > 0 && (
-            <span style={{ color: shareQueueFailedCount > 0 ? "#C8963E" : "#5BC8C4", marginRight: 8 }}>
-              {shareQueueFailedCount > 0
-                ? `${shareQueueFailedCount} share import(s) failed — open Settings → Retry`
-                : `${importQueueCount} share(s) queued`}
-            </span>
-          )}
-          {opfsReady
-            ? (nativeLinkReady ? "Add file (copy) · Link from disk · OCR · voice · search" : "Add file (copy) · OCR · voice · search — link needs Chrome/Edge")
-            : "OPFS unavailable — demo only"}
-        </span>
+        <div ref={addMenuRef} style={{ position: "relative" }}>
+          <button
+            type="button"
+            className="add-menu-trigger"
+            disabled={ingestBusy}
+            aria-expanded={addMenuOpen}
+            aria-haspopup="menu"
+            onClick={() => setAddMenuOpen((o) => !o)}
+          >
+            {ingestBusy ? "Saving…" : "Add"}
+            <span style={{ fontSize: 10, color: "#848480", marginLeft: 2 }} aria-hidden>▾</span>
+          </button>
+          <AnimatePresence>
+            {addMenuOpen && !ingestBusy && (
+              <motion.div
+                role="menu"
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.15 }}
+                className="add-menu-panel"
+              >
+                <div className="add-menu-hint">Copy into vault, link a file, or save a note.</div>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="add-menu-item"
+                  onClick={() => { setAddMenuOpen(false); handlePickVaultFile(); }}
+                >
+                  Add file…
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="add-menu-item"
+                  disabled={!nativeLinkReady}
+                  title={nativeLinkReady ? "Keep file on disk (Chrome/Edge)" : "Requires Chromium desktop"}
+                  onClick={() => {
+                    setAddMenuOpen(false);
+                    void handleLinkFromDisk();
+                  }}
+                >
+                  Link from disk…
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="add-menu-item"
+                  onClick={() => { setAddMenuOpen(false); setNoteModalOpen(true); }}
+                >
+                  Text note…
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+        {(importQueueCount > 0 || !opfsReady) && (
+          <div style={{ fontSize: 11, color: "#3A3A38", flex: "1 1 200px", lineHeight: 1.45 }}>
+            {importQueueCount > 0 && (
+              <span style={{ color: shareQueueFailedCount > 0 ? "#C8963E" : "#5BC8C4", display: "block" }}>
+                {shareQueueFailedCount > 0
+                  ? `${shareQueueFailedCount} share import(s) failed — Settings → Retry`
+                  : `${importQueueCount} share(s) queued`}
+              </span>
+            )}
+            {!opfsReady && <span>On-device vault unavailable here — demo only.</span>}
+          </div>
+        )}
       </div>
       {ingestError && (
         <div style={{ padding: "0 28px 12px", fontSize: 11, color: "#C86E8A" }}>
@@ -1877,39 +1915,38 @@ export default function Silo() {
         </div>
       )}
 
-      <div className="tag-strip" role="tablist" aria-label="Smart views" style={{ marginTop: 12 }}>
-        <button
-          type="button"
-          className={`tag-pill ${smartView === "" ? "active" : ""}`}
-          onClick={() => { setSmartView(""); }}
-        >
-          All items
-        </button>
-        {SMART_VIEWS.map((sv) => (
-          <button
-            key={sv.id}
-            type="button"
-            className={`tag-pill ${smartView === sv.id ? "active" : ""}`}
-            onClick={() => { setSmartView(sv.id); setActiveTag("All"); }}
+      <div style={{ padding: "12px 28px 8px", display: "flex", flexWrap: "wrap", gap: 12, alignItems: "stretch" }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: 6, flex: "1 1 160px", minWidth: 0 }}>
+          <span style={{ fontSize: 10, color: "#3A3A38", letterSpacing: "0.1em", textTransform: "uppercase" }}>View</span>
+          <select
+            className="vault-select"
+            aria-label="Smart view"
+            value={smartView}
+            onChange={(e) => {
+              const v = e.target.value;
+              setSmartView(v);
+              if (v) setActiveTag("All");
+            }}
           >
-            {sv.label}
-          </button>
-        ))}
-      </div>
-
-      {/* ── Filter Strip ── */}
-      <div className="tag-strip" role="tablist" aria-label="Filter by category">
-        {ALL_TAGS.map((tag) => (
-          <button
-            key={tag}
-            role="tab"
-            aria-selected={activeTag === tag}
-            className={`tag-pill ${activeTag === tag ? "active" : ""}`}
-            onClick={() => setActiveTag(tag)}
+            <option value="">All items</option>
+            {SMART_VIEWS.map((sv) => (
+              <option key={sv.id} value={sv.id}>{sv.label}</option>
+            ))}
+          </select>
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 6, flex: "1 1 160px", minWidth: 0 }}>
+          <span style={{ fontSize: 10, color: "#3A3A38", letterSpacing: "0.1em", textTransform: "uppercase" }}>Category</span>
+          <select
+            className="vault-select"
+            aria-label="Filter by category"
+            value={activeTag}
+            onChange={(e) => setActiveTag(e.target.value)}
           >
-            {tag}
-          </button>
-        ))}
+            {ALL_TAGS.map((tag) => (
+              <option key={tag} value={tag}>{tag}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {/* Active search note */}
