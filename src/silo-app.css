@@ -1510,3 +1510,52 @@ body {
 [data-density="compact"] .doc-card {
   margin-bottom: var(--space-1);
 }
+
+/* ── Privacy modal ─────────────────────────────────── */
+
+.privacy-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1900;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(6px);
+}
+
+.privacy-modal__panel {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1950;
+  width: calc(100% - 40px);
+  max-width: 480px;
+  max-height: min(80dvh, 640px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: var(--space-6);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+}
+
+.privacy-modal__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.privacy-modal__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+}
+
+.privacy-modal__body {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--leading-relaxed);
+  white-space: pre-line;
+  margin-bottom: var(--space-5);
+}

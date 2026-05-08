@@ -53,6 +53,7 @@ import { IngestDialog } from "./components/IngestDialog.jsx";
 import { PreviewPanel } from "./components/PreviewPanel.jsx";
 import { SettingsDrawer } from "./components/SettingsDrawer.jsx";
 import { UnlockScreen } from "./components/UnlockScreen.jsx";
+import { PrivacyModal } from "./components/PrivacyModal.jsx";
 import { useStorageMode } from "./hooks/useStorageMode.js";
 import { usePWAInstall, bumpMeaningfulInteraction } from "./hooks/usePWAInstall.js";
 import "./silo-app.css";
@@ -500,6 +501,7 @@ export default function Silo() {
   const [ingestBusy,    setIngestBusy]    = useState(false);
   const [ingestError,   setIngestError]   = useState(null);
   const [noteModalOpen, setNoteModalOpen] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
   const [embeddingsById, setEmbeddingsById] = useState({});
   const [queryVec, setQueryVec] = useState(null);
 
@@ -1612,6 +1614,13 @@ export default function Silo() {
         }
       },
     },
+    {
+      id: "privacy",
+      label: "Privacy policy",
+      icon: "ℹ",
+      keepOpen: true,
+      onSelect: () => setPrivacyOpen(true),
+    },
   ], [
     handleExportVaultZip,
     handleImportFolderFromDisk,
@@ -2241,6 +2250,10 @@ export default function Silo() {
         onLinkDisk={() => { void handleLinkFromDisk(); }}
         onNewNote={() => setNoteModalOpen(true)}
       />
+
+      <AnimatePresence>
+        {privacyOpen && <PrivacyModal key="privacy" onClose={() => setPrivacyOpen(false)} />}
+      </AnimatePresence>
 
       {/* ── Overlays ── */}
       <AnimatePresence>
