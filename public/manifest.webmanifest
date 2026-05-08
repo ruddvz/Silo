@@ -1,12 +1,17 @@
 {
-  "name": "Silo",
+  "name": "Silo — Private Vault",
   "short_name": "Silo",
-  "description": "Private local-first vault — documents, notes, voice, search.",
+  "description": "Your local-first, private document vault.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#080808",
-  "theme_color": "#080808",
-  "orientation": "portrait-primary",
+  "display_override": ["standalone", "window-controls-overlay"],
+  "orientation": "any",
+  "background_color": "#0f0f10",
+  "theme_color": "#0f0f10",
+  "categories": ["productivity", "utilities"],
+  "dir": "ltr",
+  "lang": "en",
   "icons": [
     {
       "src": "/icons/icon.svg",
@@ -26,9 +31,21 @@
       "files": [
         {
           "name": "files",
-          "accept": ["image/*", "application/pdf", "audio/*", "video/*", "*/*"]
+          "accept": ["application/pdf", "image/*", "audio/*", "text/*", "video/*", "*/*"]
         }
       ]
     }
-  }
+  },
+  "file_handlers": [
+    {
+      "action": "/",
+      "accept": {
+        "application/pdf": [".pdf"],
+        "image/*": [".jpg", ".jpeg", ".png", ".webp", ".gif"],
+        "audio/*": [".mp3", ".m4a", ".wav", ".ogg"],
+        "text/plain": [".txt", ".md"]
+      }
+    }
+  ],
+  "handle_links": "preferred"
 }

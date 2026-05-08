@@ -1,0 +1,81 @@
+/* Design tokens — Plan0 / Silo production UI */
+
+:root {
+  /* Neutrals */
+  --color-bg: #0f0f10;
+  --color-surface: #161618;
+  --color-surface-2: #1e1e21;
+  --color-border: #2a2a2f;
+  --color-border-hover: #3a3a42;
+
+  /* Text */
+  --color-text-primary: #f0eff4;
+  --color-text-secondary: #8b8a94;
+  --color-text-muted: #55545e;
+
+  /* Brand */
+  --color-accent: #7f6cf5;
+  --color-accent-dim: #7f6cf520;
+  --color-accent-hover: #9886f7;
+
+  /* Semantic */
+  --color-success: #3ecf8e;
+  --color-warning: #f5a623;
+  --color-danger: #ef4444;
+  --color-info: #38bdf8;
+
+  /* Category pills (auto-assigned) */
+  --cat-0: #7f6cf5;
+  --cat-1: #3ecf8e;
+  --cat-2: #f5a623;
+  --cat-3: #ef4444;
+  --cat-4: #38bdf8;
+  --cat-5: #e879f9;
+  --cat-6: #fb923c;
+  --cat-7: #a3e635;
+
+  /* Typography */
+  --font-display: "Instrument Serif", Georgia, serif;
+  --font-body: "DM Sans", system-ui, sans-serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", "Fira Code", monospace;
+
+  --text-xs: 0.6875rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-md: 1.0625rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.55;
+  --leading-relaxed: 1.75;
+
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.04em;
+  --tracking-widest: 0.12em;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}

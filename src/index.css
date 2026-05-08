@@ -1,5 +1,1 @@
-html,
-body,
-#root {
-  min-height: 100%;
-}
+@import "./silo-app.css";

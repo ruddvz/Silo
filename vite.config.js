@@ -17,4 +17,18 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ["@xenova/transformers"],
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/react/") || id.includes("node_modules/react-dom/")) return "react-vendor";
+          if (id.includes("node_modules/framer-motion")) return "framer";
+          if (id.includes("node_modules/@orama")) return "orama";
+          if (id.includes("node_modules/pdfjs-dist")) return "pdf";
+          if (id.includes("node_modules/tesseract.js")) return "ocr";
+          if (id.includes("node_modules/@tanstack/react-virtual")) return "virtual";
+        },
+      },
+    },
+  },
 });

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   getVaultRoot,
   loadManifest,
@@ -36,27 +36,22 @@ import { textContentFingerprint } from "./vault/textFingerprint.js";
 import { checkVaultIntegrity } from "./vault/integrity.js";
 import { repairVaultEntry } from "./vault/repair.js";
 import { summarizeExtractive } from "./vault/summarize.js";
+import { SearchBar } from "./components/SearchBar.jsx";
+import { DocumentList } from "./components/DocumentList.jsx";
+import { EmptyState } from "./components/EmptyState.jsx";
+import { IngestProgress } from "./components/IngestProgress.jsx";
+import { BottomNav } from "./components/BottomNav.jsx";
+import { Sidebar } from "./components/Sidebar.jsx";
+import { ShareQueue } from "./components/ShareQueue.jsx";
+import { InstallBanner } from "./components/InstallBanner.jsx";
+import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
+import { Banner } from "./components/Banner.jsx";
+import { useStorageMode } from "./hooks/useStorageMode.js";
+import { usePWAInstall, bumpMeaningfulInteraction } from "./hooks/usePWAInstall.js";
+import "./silo-app.css";
 
 /** Same artwork as favicon / PWA manifest (`public/icons/icon.svg`) */
 const APP_ICON_SRC = `${import.meta.env.BASE_URL}icons/icon.svg`.replace(/\/{2,}/g, "/");
-
-/** Bottom sheet: never use left:50% + translateX here — Framer Motion overwrites `transform` and breaks centering. */
-const BOTTOM_SHEET_PANEL = {
-  position: "fixed",
-  bottom: 0,
-  left: 0,
-  right: 0,
-  marginLeft: "auto",
-  marginRight: "auto",
-  width: "100%",
-  maxWidth: 480,
-  boxSizing: "border-box",
-  background: "#111",
-  borderTop: "1px solid #1E1E1E",
-  borderRadius: "24px 24px 0 0",
-  padding: "20px 28px calc(28px + env(safe-area-inset-bottom, 0px))",
-  zIndex: 1200,
-};
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -119,19 +114,21 @@ const DEMO_TEXT_BODY = {
   20: "Hey — reminder rent is due April 5. E-transfer to the usual address. Thx!",
 };
 
-function kindLabel(kind, storage) {
-  if (storage === "linked" && kind !== "text") return "LNK";
-  if (kind === "text") return "MSG";
-  if (kind === "audio") return "MIC";
-  if (kind === "image") return "IMG";
-  if (kind === "pdf") return "PDF";
-  return "FILE";
-}
-
 function buildCombinedIndexText(doc, content) {
   const k = doc.kind || "pdf";
   const base = `${doc.name} ${doc.tag} ${k}`;
   return `${base} ${content || ""}`.trim();
+}
+
+function mergeDocs(seed, local) {
+  const byId = new Map();
+  for (const d of seed) byId.set(String(d.id), d);
+  for (const d of local) byId.set(String(d.id), d);
+  return Array.from(byId.values()).sort((a, b) => {
+    const ta = new Date(a.createdAt || 0).getTime();
+    const tb = new Date(b.createdAt || 0).getTime();
+    return tb - ta;
+  });
 }
 
 const SMART_VIEWS = [
@@ -173,6 +170,25 @@ function formatDate(iso) {
   }
 }
 
+function formatRelativeDate(iso) {
+  try {
+    const d = new Date(iso);
+    const now = Date.now();
+    const diffSec = Math.round((d.getTime() - now) / 1000);
+    const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+    const abs = Math.abs(diffSec);
+    if (abs < 60) return rtf.format(0, "second");
+    if (abs < 3600) return rtf.format(Math.round(diffSec / 60), "minute");
+    if (abs < 86400) return rtf.format(Math.round(diffSec / 3600), "hour");
+    if (abs < 86400 * 7) return rtf.format(Math.round(diffSec / 86400), "day");
+    if (abs < 86400 * 30) return rtf.format(Math.round(diffSec / (86400 * 7)), "week");
+    if (abs < 86400 * 365) return rtf.format(Math.round(diffSec / (86400 * 30)), "month");
+    return rtf.format(Math.round(diffSec / (86400 * 365)), "year");
+  } catch {
+    return formatDate(iso);
+  }
+}
+
 /** @param {string} text */
 function inferTagGuess(text) {
   const t = text.toLowerCase();
@@ -195,21 +211,6 @@ function inferTagForNote(text) {
   return inferTagGuess(text);
 }
 
-function mergeDocs(seed, local) {
-  const byId = new Map();
-  for (const d of seed) byId.set(String(d.id), d);
-  for (const d of local) byId.set(String(d.id), d);
-  return Array.from(byId.values()).sort((a, b) => {
-    const ta = new Date(a.createdAt || 0).getTime();
-    const tb = new Date(b.createdAt || 0).getTime();
-    return tb - ta;
-  });
-}
-
-function tagMeta(tag) {
-  return TAG_META[tag] || { color: "#848480", bg: "rgba(132,132,128,0.10)", label: "…" };
-}
-
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function Toast({ message, onDone }) {
@@ -221,15 +222,9 @@ function Toast({ message, onDone }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0,  scale: 1    }}
-      exit={{    opacity: 0, y: 20, scale: 0.95 }}
-      style={{
-        position: "fixed", bottom: 110, left: "50%", transform: "translateX(-50%)",
-        background: "rgba(30,30,30,0.95)", border: "1px solid #2a2a2a",
-        borderRadius: 14, padding: "10px 20px", fontSize: 13, color: "#EDECEA",
-        zIndex: 2000, whiteSpace: "nowrap", backdropFilter: "blur(10px)",
-        pointerEvents: "none",
-      }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 20, scale: 0.95 }}
+      className="toast-fixed"
     >
       {message}
     </motion.div>
@@ -439,34 +434,25 @@ function SettingsDrawer({ onClose, actions }) {
       <motion.div
         initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
         transition={{ type: "spring", damping: 28, stiffness: 300 }}
-        style={BOTTOM_SHEET_PANEL}
+        className="settings-sheet-panel"
         role="dialog" aria-modal="true" aria-label="Settings"
       >
-        <div style={{ width: 36, height: 4, background: "#2a2a2a", borderRadius: 2, margin: "0 auto 20px" }} />
-        <div style={{ fontSize: 11, color: "#848480", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 16 }}>
-          Vault tools
-        </div>
+        <div style={{ width: 36, height: 4, background: "var(--color-border)", borderRadius: 2, margin: "0 auto 20px" }} />
+        <div className="settings-sheet-title">Vault tools</div>
         {actions.map((opt, i) => (
           <button
             key={opt.id}
             ref={i === 0 ? firstRef : null}
             type="button"
             disabled={opt.disabled}
+            className={`settings-row ${opt.danger ? "settings-row--danger" : ""}`}
             onClick={() => {
               opt.onSelect?.();
               if (!opt.keepOpen) onClose();
             }}
-            style={{
-              display: "flex", justifyContent: "space-between", alignItems: "center",
-              width: "100%", padding: "14px 0", background: "transparent",
-              border: "none", borderBottom: i < actions.length - 1 ? "1px solid #1A1A1A" : "none",
-              color: opt.danger ? "#C86E8A" : opt.disabled ? "#3A3A38" : "#EDECEA",
-              fontSize: 14, cursor: opt.disabled ? "not-allowed" : "pointer",
-              fontFamily: "'JetBrains Mono', monospace", textAlign: "left",
-            }}
           >
             <span>{opt.label}</span>
-            <span style={{ color: "#3A3A38", fontSize: 16 }}>{opt.icon}</span>
+            <span style={{ color: "var(--color-text-muted)", fontSize: 16 }}>{opt.icon}</span>
           </button>
         ))}
       </motion.div>
@@ -502,7 +488,7 @@ function ContextMenu({ doc, onAction, onClose }) {
       <motion.div
         initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
         transition={{ type: "spring", damping: 28, stiffness: 300 }}
-        style={BOTTOM_SHEET_PANEL}
+        className="settings-sheet-panel"
         role="dialog" aria-modal="true" aria-label={`Actions for ${doc.name}`}
       >
         <div style={{ width: 36, height: 4, background: "#2a2a2a", borderRadius: 2, margin: "0 auto 20px" }} />
@@ -567,14 +553,31 @@ export default function Silo() {
 
   const pressTimer       = useRef(null);
   const blurTimer        = useRef(null);
-  const searchRef        = useRef(null);
-  const styleInjected    = useRef(false);
   const vaultRef         = useRef(null);
   const vaultFileInputRef = useRef(null);
   const backupImportRef = useRef(null);
   const processAllPendingSharesRef = useRef(async () => {});
   const addMenuRef = useRef(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState("vault");
+  const [ingestStage, setIngestStage] = useState(/** @type {string | null} */ (null));
+  const [ingestOverlayName, setIngestOverlayName] = useState(/** @type {string | null} */ (null));
+  const [confirmMergeOpen, setConfirmMergeOpen] = useState(false);
+  const pendingMergeFilesRef = useRef(null);
+  const [shareListItems, setShareListItems] = useState([]);
+  const [embeddingModelReady, setEmbeddingModelReady] = useState(false);
+  const [embeddingSearchBusy, setEmbeddingSearchBusy] = useState(false);
+  const [sharePanelDismissed, setSharePanelDismissed] = useState(false);
+  const [semanticSearchEnabled, setSemanticSearchEnabled] = useState(
+    () => typeof localStorage !== "undefined" && localStorage.getItem("silo_semantic") !== "0",
+  );
+
+  const storageMode = useStorageMode();
+  const { showBanner: showInstallBanner, deferredPrompt, install: pwaInstall, dismiss: dismissInstallBanner } = usePWAInstall();
+
+  useEffect(() => {
+    setSharePanelDismissed(false);
+  }, [importQueueCount]);
 
   useEffect(() => {
     if (vaultPassphrase) sessionStorage.setItem("silo_vault_pass", vaultPassphrase);
@@ -586,9 +589,12 @@ export default function Silo() {
       const { total, failed } = await getShareQueueStats();
       setImportQueueCount(total);
       setShareQueueFailedCount(failed);
+      const all = await getAllPendingShares();
+      setShareListItems(all);
     } catch {
       setImportQueueCount(0);
       setShareQueueFailedCount(0);
+      setShareListItems([]);
     }
   }, []);
 
@@ -630,102 +636,11 @@ export default function Silo() {
   }, [addMenuOpen]);
 
   useEffect(() => {
-    styleInjected.current = true;
-
-    const link = document.createElement("link");
-    link.rel  = "stylesheet";
-    link.href = "https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300&display=swap";
-    document.head.appendChild(link);
-
-    const style = document.createElement("style");
-    style.textContent = `
-      :root {
-        --bg: #080808; --s1: #0D0D0D; --s2: #111111;
-        --b1: #1E1E1E; --b2: #282828;
-        --t1: #EDECEA; --t2: #848480; --t3: #3A3A38;
-        --amber: #C8963E;
-        --mono: 'JetBrains Mono', monospace;
-      }
-      body { background: var(--bg); color: var(--t1); font-family: var(--mono); margin: 0; }
-      html { -webkit-text-size-adjust: 100%; }
-      *:focus-visible {
-        outline: 2px solid var(--amber);
-        outline-offset: 2px;
-        border-radius: 6px;
-      }
-      .vault-root {
-        max-width: 480px; margin: 0 auto; min-height: 100svh;
-        padding-top: max(10px, env(safe-area-inset-top, 0px));
-        padding-bottom: 120px; position: relative;
-      }
-      .vault-root::after {
-        content: '';
-        position: fixed; inset: 0; pointer-events: none;
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
-        opacity: 0.4; z-index: 999;
-      }
-      .doc-card {
-        background: #0D0D0D; border: 1px solid #1E1E1E; border-radius: 22px;
-        padding: 16px; margin: 0 28px 10px; display: flex; align-items: center; gap: 15px;
-        cursor: pointer; position: relative; overflow: hidden;
-        transition: border-color 0.15s;
-      }
-      .doc-card:hover  { border-color: #2a2a2a; }
-      .doc-card:focus  { border-color: var(--amber); }
-      .search-pill {
-        position: fixed;
-        bottom: max(30px, env(safe-area-inset-bottom, 0px));
-        left: 50%;
-        transform: translateX(-50%);
-        width: calc(100% - 56px); max-width: 424px;
-        background: rgba(17,17,17,0.9); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-        border: 1px solid #282828; border-radius: 24px; padding: 14px 20px;
-        display: flex; align-items: center; gap: 12px; z-index: 1000;
-        box-shadow: 0 20px 40px rgba(0,0,0,0.5);
-      }
-      .search-input {
-        background: transparent; border: none; outline: none; color: #fff;
-        font-family: var(--mono); font-size: 16px; flex: 1; min-height: 1.25em;
-      }
-      .icon-btn {
-        background: transparent; border: none; cursor: pointer;
-        color: #848480; padding: 4px; display: flex; align-items: center; justify-content: center;
-        border-radius: 6px; transition: color 0.15s;
-      }
-      .icon-btn:hover { color: #EDECEA; }
-      .vault-select {
-        appearance: none; -webkit-appearance: none;
-        background: #111 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23848480' d='M3 4.5L6 7.5L9 4.5'/%3E%3C/svg%3E") no-repeat right 12px center;
-        border: 1px solid #282828; border-radius: 12px;
-        padding: 10px 34px 10px 14px; color: #EDECEA; font-size: 16px;
-        font-family: var(--mono); cursor: pointer; min-width: 0;
-        max-width: 100%;
-      }
-      .vault-select:hover { border-color: #3a3a3a; }
-      .vault-select:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-      .add-menu-trigger {
-        display: inline-flex; align-items: center; gap: 8px;
-        padding: 10px 16px; border-radius: 12px; border: 1px solid #282828;
-        background: #111; color: #EDECEA; font-size: 16px; font-family: var(--mono);
-        cursor: pointer; letter-spacing: 0.04em;
-      }
-      .add-menu-trigger:disabled { opacity: 0.45; cursor: not-allowed; }
-      .add-menu-trigger:hover:not(:disabled) { border-color: #3a3a3a; }
-      .add-menu-panel {
-        position: absolute; top: calc(100% + 8px); right: 0; left: auto; min-width: 220px;
-        background: #111; border: 1px solid #282828; border-radius: 14px;
-        padding: 6px; z-index: 60; box-shadow: 0 16px 48px rgba(0,0,0,0.55);
-      }
-      .add-menu-item {
-        display: block; width: 100%; text-align: left; padding: 11px 14px;
-        border: none; border-radius: 10px; background: transparent; color: #EDECEA;
-        font-size: 16px; font-family: var(--mono); cursor: pointer;
-      }
-      .add-menu-item:hover:not(:disabled) { background: #1A1A1A; }
-      .add-menu-item:disabled { color: #3A3A38; cursor: not-allowed; }
-      .add-menu-hint { font-size: 10px; color: #3A3A38; padding: 6px 14px 4px; line-height: 1.4; }
-    `;
-    document.head.appendChild(style);
+    void import("./vault/embeddings.js")
+      .then((m) => m.warmUpEmbeddingModel())
+      .then((ext) => {
+        setEmbeddingModelReady(!!ext);
+      });
   }, []);
 
   // ── Clean up timers on unmount ──
@@ -765,7 +680,7 @@ export default function Silo() {
           kind: e.kind || "pdf",
           storage: e.storage || "opfs",
           contentHash: e.contentHash,
-          date: formatDate(e.createdAt),
+          date: formatRelativeDate(e.createdAt),
           size: formatBytes(e.sizeBytes),
           source: "local",
           createdAt: e.createdAt,
@@ -798,8 +713,9 @@ export default function Silo() {
 
   // ── Demo docs: local embeddings for hybrid semantic search ──
   useEffect(() => {
+    if (!semanticSearchEnabled) return;
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const { embedText } = await import("./vault/embeddings.js");
         const next = {};
@@ -808,7 +724,8 @@ export default function Silo() {
             ? DEMO_TEXT_BODY[d.id]
             : `${String(d.name).replace(/\.(pdf|txt)$/i, "").replace(/_/g, " ")} ${d.tag} ${DEMO_INDEX_BOOST[d.id] || ""}`;
           const row = { ...d, kind: d.kind || "pdf" };
-          next[d.id] = await embedText(buildCombinedIndexText(row, body));
+          const vec = await embedText(buildCombinedIndexText(row, body));
+          if (vec) next[d.id] = vec;
         }
         if (!cancelled) setEmbeddingsById((prev) => ({ ...next, ...prev }));
       } catch (e) {
@@ -816,24 +733,28 @@ export default function Silo() {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [semanticSearchEnabled]);
 
   // ── Query embedding (debounced) for semantic leg of search ──
   useEffect(() => {
     const t = query.trim();
-    if (!t) {
+    if (!t || !semanticSearchEnabled) {
       setQueryVec(null);
+      setEmbeddingSearchBusy(false);
       return;
     }
+    setEmbeddingSearchBusy(true);
     let cancelled = false;
     const timer = setTimeout(() => {
-      (async () => {
+      void (async () => {
         try {
           const { embedText } = await import("./vault/embeddings.js");
           const v = await embedText(t);
           if (!cancelled) setQueryVec(v);
         } catch {
           if (!cancelled) setQueryVec(null);
+        } finally {
+          if (!cancelled) setEmbeddingSearchBusy(false);
         }
       })();
     }, 280);
@@ -841,7 +762,7 @@ export default function Silo() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, semanticSearchEnabled]);
 
   const duplicateHashes = useMemo(() => {
     const counts = new Map();
@@ -872,7 +793,7 @@ export default function Silo() {
     if (q) {
       const textIds = searchIndex.matchingDocIds(q);
       const hasEmb = Object.keys(embeddingsById).length > 0;
-      if (queryVec && hasEmb) {
+      if (semanticSearchEnabled && queryVec && hasEmb) {
         const vecIds = topMatchingDocIds(embeddingsById, queryVec, 0.28, 120);
         idSet = mergeSearchIds(textIds, vecIds, 0.42);
       } else {
@@ -897,9 +818,18 @@ export default function Silo() {
       if (items.length) acc[tag] = items;
       return acc;
     }, {});
-  }, [docs, activeTag, query, searchIndex, embeddingsById, queryVec, smartView, contentById, duplicateHashes, duplicateFingerprints]);
+  }, [docs, activeTag, query, searchIndex, embeddingsById, queryVec, smartView, contentById, duplicateHashes, duplicateFingerprints, semanticSearchEnabled]);
 
   const hasResults = Object.keys(display).length > 0;
+
+  const emptyVariant = useMemo(() => {
+    if (hasResults) return "vault";
+    if (query.trim()) return "search";
+    if (smartView === "Voice") return "voice";
+    if (activeTag !== "All" || smartView) return "category";
+    if (docs.length === 0) return "vault";
+    return "search";
+  }, [hasResults, query, smartView, activeTag, docs.length]);
 
   // Total converted to GB for the hero stat
   const totalGB = useMemo(() => {
@@ -916,9 +846,17 @@ export default function Silo() {
     const combined = buildCombinedIndexText(docRow, indexText);
     const { embedText } = await import("./vault/embeddings.js");
     const vec = await embedText(combined);
-    await persistEmbedding(vault, id, vec);
     setContentById((prev) => ({ ...prev, [id]: indexText }));
-    setEmbeddingsById((prev) => ({ ...prev, [String(id)]: vec }));
+    if (vec) {
+      await persistEmbedding(vault, id, vec);
+      setEmbeddingsById((prev) => ({ ...prev, [String(id)]: vec }));
+    } else {
+      setEmbeddingsById((prev) => {
+        const next = { ...prev };
+        delete next[String(id)];
+        return next;
+      });
+    }
   }, [vaultPassphrase]);
 
   const resolveLocalFile = useCallback(async (doc) => {
@@ -933,6 +871,7 @@ export default function Silo() {
   }, []);
 
   const handleOpenDoc = useCallback(async (doc) => {
+    bumpMeaningfulInteraction();
     const k = doc.kind || "pdf";
     if (doc.source === "demo") {
       if (k === "text") {
@@ -991,109 +930,118 @@ export default function Silo() {
 
   const ingestFromFile = useCallback(async (file, options) => {
     const { vault, storage, fileHandle } = options;
-    const lower = file.name.toLowerCase();
-    let kind = "file";
-    if (lower.endsWith(".pdf")) kind = "pdf";
-    else if (/\.(png|jpe?g|gif|webp|bmp|heic|heif)$/i.test(lower)) kind = "image";
-    else if (/\.(m4a|aac|mp3|wav|webm|ogg|opus|flac)$/i.test(lower)) kind = "audio";
-
-    let contentHash = "";
+    setIngestStage("reading");
+    setIngestOverlayName(file.name);
     try {
-      contentHash = await sha256HexFromBlob(file);
-    } catch {
-      contentHash = "";
+      const lower = file.name.toLowerCase();
+      let kind = "file";
+      if (lower.endsWith(".pdf")) kind = "pdf";
+      else if (/\.(png|jpe?g|gif|webp|bmp|heic|heif)$/i.test(lower)) kind = "image";
+      else if (/\.(m4a|aac|mp3|wav|webm|ogg|opus|flac)$/i.test(lower)) kind = "audio";
+
+      let contentHash = "";
+      try {
+        contentHash = await sha256HexFromBlob(file);
+      } catch {
+        contentHash = "";
+      }
+      if (contentHash && (await isDuplicateContent(vault, { contentHash, textFingerprint: "" }))) {
+        showToast("Already in vault (same file hash)");
+        return false;
+      }
+
+      const id = crypto.randomUUID();
+      const createdAt = new Date().toISOString();
+      let indexText = "";
+
+      if (kind === "pdf") {
+        const buffer = await file.arrayBuffer();
+        const { extractTextFromPdfBuffer } = await import("./vault/extractPdfText.js");
+        indexText = await extractTextFromPdfBuffer(buffer);
+      } else if (kind === "image") {
+        setIngestStage("ocr");
+        const { extractTextFromImage } = await import("./vault/ocrImage.js");
+        indexText = await extractTextFromImage(file);
+        if (!indexText) indexText = `image screenshot ${file.name}`;
+      } else if (kind === "audio") {
+        setIngestStage("transcribe");
+        const { transcribeAudio } = await import("./vault/transcribe.js");
+        indexText = (await transcribeAudio(file)).trim();
+        if (!indexText) indexText = `voice note audio ${file.name}`;
+      } else {
+        indexText = `file attachment ${file.type || "binary"} ${file.name}`;
+      }
+
+      let textFingerprint = "";
+      try {
+        textFingerprint = await textContentFingerprint(indexText);
+      } catch {
+        textFingerprint = "";
+      }
+      if (textFingerprint && (await isDuplicateContent(vault, { contentHash: "", textFingerprint }))) {
+        showToast("Already in vault (same text)");
+        return false;
+      }
+
+      const tag = inferTagGuess(`${indexText} ${file.name}`);
+      setIngestStage("store");
+      if (storage === "opfs") {
+        await persistVaultBlob(vault, id, file);
+      } else if (fileHandle) {
+        await storeLinkedFileHandle(id, fileHandle);
+      }
+
+      const row = {
+        id,
+        name: file.name,
+        tag,
+        kind,
+        storage,
+        date: formatRelativeDate(createdAt),
+        size: formatBytes(file.size),
+        source: "local",
+        createdAt,
+        sizeBytes: file.size,
+        ...(contentHash ? { contentHash } : {}),
+        ...(textFingerprint ? { textFingerprint } : {}),
+      };
+      setIngestStage("embed");
+      await indexAndPersistEmbedding(vault, id, row, indexText);
+
+      const entries = await loadManifest(vault);
+      const entry = {
+        id,
+        name: file.name,
+        tag,
+        kind,
+        createdAt,
+        sizeBytes: file.size,
+        mimeType: file.type || undefined,
+        storage,
+        ...(storage === "linked" && fileHandle?.name ? { linkedPath: fileHandle.name } : {}),
+        ...(contentHash ? { contentHash } : {}),
+        ...(textFingerprint ? { textFingerprint } : {}),
+      };
+      entries.push(entry);
+      await saveManifest(vault, entries);
+
+      setDocs((prev) => mergeDocs(prev, [row]));
+      showToast(
+        storage === "linked"
+          ? "Linked from disk (reads original file)"
+          : kind === "pdf"
+            ? "PDF indexed"
+            : kind === "audio"
+              ? "Voice note transcribed & indexed"
+              : kind === "image"
+                ? "Image OCR & indexed"
+                : "File saved to vault",
+      );
+      return true;
+    } finally {
+      setIngestStage(null);
+      setIngestOverlayName(null);
     }
-    if (contentHash && (await isDuplicateContent(vault, { contentHash, textFingerprint: "" }))) {
-      showToast("Already in vault (same file hash)");
-      return false;
-    }
-
-    const id = crypto.randomUUID();
-    const createdAt = new Date().toISOString();
-    let indexText = "";
-
-    if (kind === "pdf") {
-      const buffer = await file.arrayBuffer();
-      const { extractTextFromPdfBuffer } = await import("./vault/extractPdfText.js");
-      indexText = await extractTextFromPdfBuffer(buffer);
-    } else if (kind === "image") {
-      showToast("Reading image text…");
-      const { extractTextFromImage } = await import("./vault/ocrImage.js");
-      indexText = await extractTextFromImage(file);
-      if (!indexText) indexText = `image screenshot ${file.name}`;
-    } else if (kind === "audio") {
-      showToast("Transcribing voice note…");
-      const { transcribeAudio } = await import("./vault/transcribe.js");
-      indexText = (await transcribeAudio(file)).trim();
-      if (!indexText) indexText = `voice note audio ${file.name}`;
-    } else {
-      indexText = `file attachment ${file.type || "binary"} ${file.name}`;
-    }
-
-    let textFingerprint = "";
-    try {
-      textFingerprint = await textContentFingerprint(indexText);
-    } catch {
-      textFingerprint = "";
-    }
-    if (textFingerprint && (await isDuplicateContent(vault, { contentHash: "", textFingerprint }))) {
-      showToast("Already in vault (same text)");
-      return false;
-    }
-
-    const tag = inferTagGuess(`${indexText} ${file.name}`);
-    if (storage === "opfs") {
-      await persistVaultBlob(vault, id, file);
-    } else if (fileHandle) {
-      await storeLinkedFileHandle(id, fileHandle);
-    }
-
-    const row = {
-      id,
-      name: file.name,
-      tag,
-      kind,
-      storage,
-      date: formatDate(createdAt),
-      size: formatBytes(file.size),
-      source: "local",
-      createdAt,
-      sizeBytes: file.size,
-      ...(contentHash ? { contentHash } : {}),
-      ...(textFingerprint ? { textFingerprint } : {}),
-    };
-    await indexAndPersistEmbedding(vault, id, row, indexText);
-
-    const entries = await loadManifest(vault);
-    const entry = {
-      id,
-      name: file.name,
-      tag,
-      kind,
-      createdAt,
-      sizeBytes: file.size,
-      mimeType: file.type || undefined,
-      storage,
-      ...(storage === "linked" && fileHandle?.name ? { linkedPath: fileHandle.name } : {}),
-      ...(contentHash ? { contentHash } : {}),
-      ...(textFingerprint ? { textFingerprint } : {}),
-    };
-    entries.push(entry);
-    await saveManifest(vault, entries);
-
-    setDocs((prev) => mergeDocs(prev, [row]));
-    showToast(
-      storage === "linked"
-        ? "Linked from disk (reads original file)"
-        : kind === "pdf"
-          ? "PDF indexed"
-          : kind === "audio"
-            ? "Voice note transcribed & indexed"
-            : kind === "image"
-              ? "Image OCR & indexed"
-              : "File saved to vault",
-    );
-    return true;
   }, [indexAndPersistEmbedding, showToast, isDuplicateContent]);
 
   const handleVaultFiles = useCallback(async (fileList) => {
@@ -1191,7 +1139,7 @@ export default function Silo() {
         name,
         tag,
         kind: "text",
-        date: formatDate(createdAt),
+        date: formatRelativeDate(createdAt),
         size: formatBytes(sizeBytes),
         source: "local",
         createdAt,
@@ -1225,10 +1173,11 @@ export default function Silo() {
     }
   }, [ensureVault, showToast, indexAndPersistEmbedding, isDuplicateContent]);
 
-  const processAllPendingShares = useCallback(async () => {
+  const processAllPendingShares = useCallback(async (onlyId) => {
     const vault = await ensureVault();
     if (!vault) return;
-    const all = await getAllPendingShares();
+    const allRaw = await getAllPendingShares();
+    const all = onlyId ? allRaw.filter((r) => r.id === onlyId) : allRaw;
     if (!all.length) return;
     setIngestBusy(true);
     let ok = 0;
@@ -1270,7 +1219,7 @@ export default function Silo() {
                 await persistVaultBlob(vault, id, blob);
                 const row = {
                   id, name, tag, kind: "text", storage: "opfs",
-                  date: formatDate(createdAt), size: formatBytes(blob.size), source: "local", createdAt, sizeBytes: blob.size,
+                  date: formatRelativeDate(createdAt), size: formatBytes(blob.size), source: "local", createdAt, sizeBytes: blob.size,
                   ...(h ? { contentHash: h } : {}),
                   ...(tf ? { textFingerprint: tf } : {}),
                 };
@@ -1325,7 +1274,7 @@ export default function Silo() {
 
   useEffect(() => {
     if (!opfsReady) return;
-    void processAllPendingShares();
+    void processAllPendingShares(undefined);
   }, [opfsReady, processAllPendingShares]);
 
   const handleImportFolderFromDisk = useCallback(async () => {
@@ -1406,7 +1355,17 @@ export default function Silo() {
     }
   }, []);
 
-  const handleMergeBackupZip = useCallback(async (fileList) => {
+  const handleRequestMergeBackup = useCallback((fileList) => {
+    const file = fileList?.[0];
+    if (!file) return;
+    pendingMergeFilesRef.current = fileList;
+    setConfirmMergeOpen(true);
+  }, []);
+
+  const executeMergeBackup = useCallback(async () => {
+    const fileList = pendingMergeFilesRef.current;
+    pendingMergeFilesRef.current = null;
+    setConfirmMergeOpen(false);
     const file = fileList?.[0];
     if (!file) return;
     const vault = await ensureVault();
@@ -1491,7 +1450,7 @@ export default function Silo() {
       return;
     }
     void requestShareQueueBackgroundSync();
-    await processAllPendingShares();
+    await processAllPendingShares(undefined);
     void refreshShareQueueCount();
   }, [opfsReady, processAllPendingShares, refreshShareQueueCount, showToast]);
 
@@ -1516,6 +1475,26 @@ export default function Silo() {
       onSelect: () => { void handleRetryShareImports(); },
     },
     { id: "clearshares", label: "Clear pending shares queue", icon: "⊘", onSelect: () => { void handleClearShareQueue(); } },
+    {
+      id: "semantic",
+      label: semanticSearchEnabled ? "Semantic search: on" : "Semantic search: off",
+      icon: "◎",
+      keepOpen: true,
+      onSelect: () => {
+        setSemanticSearchEnabled((v) => {
+          const n = !v;
+          try {
+            localStorage.setItem("silo_semantic", n ? "1" : "0");
+          } catch {
+            /* ignore */
+          }
+          showToast(n ? "Semantic search on" : "Semantic search off — keywords only");
+          return n;
+        });
+        setQueryVec(null);
+        bumpMeaningfulInteraction();
+      },
+    },
     {
       id: "pass",
       label: "Set vault passphrase (encrypts index text)",
@@ -1580,6 +1559,7 @@ export default function Silo() {
     handleRetryShareImports,
     importQueueCount,
     ingestBusy,
+    semanticSearchEnabled,
     rewrapAllVaultText,
     vaultPassphrase,
     showToast,
@@ -1706,7 +1686,7 @@ export default function Silo() {
       try {
         const { embedText } = await import("./vault/embeddings.js");
         const vec = await embedText(buildCombinedIndexText(row, body));
-        setEmbeddingsById((prev) => ({ ...prev, [String(docId)]: vec }));
+        if (vec) setEmbeddingsById((prev) => ({ ...prev, [String(docId)]: vec }));
       } catch {
         /* embeddings optional */
       }
@@ -1717,86 +1697,161 @@ export default function Silo() {
 
   const handleQueryChange = (val) => {
     setQuery(val);
+    if (val.trim()) bumpMeaningfulInteraction();
     if (val && activeTag !== "All") setActiveTag("All");
   };
 
   const handleSearchBlur = () => {
     blurTimer.current = setTimeout(() => {
-      if (!query) searchRef.current?.blur();
+      if (!query) document.getElementById("silo-global-search")?.blur();
     }, 150);
   };
 
-  return (
-    <div className="vault-root">
+  useEffect(() => {
+    if (mobileTab === "search") {
+      const t = window.setTimeout(() => document.getElementById("silo-global-search")?.focus(), 60);
+      return () => window.clearTimeout(t);
+    }
+    if (mobileTab === "settings") {
+      setSettingsOpen(true);
+      setMobileTab("vault");
+    }
+    return undefined;
+  }, [mobileTab]);
 
-      {/* ── Header + title + Add ── */}
-      <div style={{ padding: "8px 28px 12px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
-            <img
-              src={APP_ICON_SRC}
-              alt=""
-              width={36}
-              height={36}
-              style={{ borderRadius: 10, flexShrink: 0, objectFit: "contain" }}
+  return (
+    <div className="app-shell">
+      {showInstallBanner && deferredPrompt && (
+        <div style={{ gridColumn: "1 / -1", paddingTop: "var(--safe-top)" }}>
+          <InstallBanner onInstall={() => void pwaInstall()} onDismiss={dismissInstallBanner} />
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={confirmMergeOpen}
+        title="Merge backup into this vault?"
+        body="This imports entries from the selected Silo export .zip. Existing entries with the same id are overwritten by the backup copy. Continue only if you trust this file."
+        confirmLabel="Yes, merge backup"
+        confirmVariant="danger"
+        onConfirm={() => { void executeMergeBackup(); }}
+        onCancel={() => {
+          setConfirmMergeOpen(false);
+          pendingMergeFilesRef.current = null;
+          if (backupImportRef.current) backupImportRef.current.value = "";
+        }}
+      />
+
+      <IngestProgress stage={ingestStage} fileName={ingestOverlayName} />
+
+      <div className="app-shell__sidebar">
+        <Sidebar
+          tags={ALL_TAGS}
+          activeTag={activeTag}
+          smartView={smartView}
+          onTag={(t) => {
+            setActiveTag(t);
+            bumpMeaningfulInteraction();
+          }}
+          onSmart={(id) => {
+            setSmartView(id);
+            if (id) setActiveTag("All");
+            bumpMeaningfulInteraction();
+          }}
+          onSettings={() => {
+            setSettingsOpen(true);
+            bumpMeaningfulInteraction();
+          }}
+        />
+      </div>
+
+      <div className="app-shell__main">
+        <div className="app-shell__main-inner">
+          {storageMode !== "checking" && storageMode !== "opfs" && (
+            <Banner variant="warning">
+              Private OPFS storage is not available in this browser session. Your vault may not persist.
+              {storageMode === "localstorage-fallback" ? " Try Chrome or Edge for full OPFS support." : ""}
+            </Banner>
+          )}
+          {!opfsReady && storageMode === "opfs" && (
+            <Banner variant="info">Connecting to on-device storage…</Banner>
+          )}
+
+          {!sharePanelDismissed && shareListItems.length > 0 && (
+            <ShareQueue
+              items={shareListItems}
+              onProcess={(item) => { void processAllPendingShares(item.id); }}
+              onProcessAll={() => { void processAllPendingShares(undefined); }}
+              onDismiss={() => setSharePanelDismissed(true)}
             />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{
-                  fontSize: 13, fontWeight: 600, letterSpacing: "0.14em",
-                  color: "#EDECEA", fontFamily: "var(--mono)",
-                }}>
-                  SILO
-                </span>
-                <span
-                  style={{
-                    width: 6, height: 6, borderRadius: "50%",
-                    background: opfsReady ? "#6BBF7A" : "#5a5a58",
-                    boxShadow: opfsReady ? "0 0 8px rgba(107,191,122,0.5)" : "none",
-                    flexShrink: 0,
-                  }}
-                  title={opfsReady ? "Vault ready" : "Demo mode"}
-                  aria-hidden
-                />
-              </div>
-              <div style={{ fontSize: 10, color: "#3A3A38", marginTop: 3, letterSpacing: "0.05em" }}>
-                {docs.length} items · {totalGB} GB
+          )}
+          {shareQueueFailedCount > 0 && (
+            <div style={{ padding: "0 var(--space-6)", fontSize: "var(--text-xs)", color: "var(--color-warning)", marginBottom: "var(--space-2)" }}>
+              {shareQueueFailedCount} share import(s) failed — retry from the queue or Settings.
+            </div>
+          )}
+
+          <div className="vault-topbar">
+            <div className="vault-brand-row">
+              <img
+                src={APP_ICON_SRC}
+                alt=""
+                width={36}
+                height={36}
+                style={{ borderRadius: 10, flexShrink: 0, objectFit: "contain" }}
+              />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className="vault-brand-mark">SILO</span>
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background: opfsReady ? "var(--color-success)" : "var(--color-text-muted)",
+                      boxShadow: opfsReady ? "0 0 8px color-mix(in srgb, var(--color-success) 50%, transparent)" : "none",
+                      flexShrink: 0,
+                    }}
+                    title={opfsReady ? "Vault ready" : "Demo mode"}
+                    aria-hidden
+                  />
+                </div>
+                <div className="vault-brand-meta">
+                  {docs.length} items · {totalGB} GB
+                </div>
               </div>
             </div>
+            <button
+              className="icon-btn"
+              onClick={() => {
+                setSettingsOpen(true);
+                bumpMeaningfulInteraction();
+              }}
+              aria-label="Open settings"
+              type="button"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </button>
           </div>
-          <button
-            className="icon-btn"
-            onClick={() => setSettingsOpen(true)}
-            aria-label="Open settings"
-            type="button"
-            style={{ flexShrink: 0, marginTop: 2 }}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-          </button>
-        </div>
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, marginTop: 14 }}>
-          <motion.h1
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            style={{
-              margin: 0, fontSize: 22, fontWeight: 600, letterSpacing: "-0.03em",
-              color: "#EDECEA", fontFamily: "var(--mono)", flex: 1, minWidth: 0,
-            }}
-          >
-            Your vault
-          </motion.h1>
-          <div ref={addMenuRef} style={{ position: "relative", flexShrink: 0 }}>
+          <div style={{ padding: "0 var(--space-6)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, marginTop: 14 }}>
+            <motion.h1
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="vault-hero-title"
+            >
+              Your vault
+            </motion.h1>
+            <div ref={addMenuRef} className="add-menu-wrap">
             <input
               ref={backupImportRef}
               type="file"
               accept=".zip,application/zip"
               style={{ display: "none" }}
               aria-hidden="true"
-              onChange={(e) => { void handleMergeBackupZip(e.target.files); }}
+              onChange={(e) => { handleRequestMergeBackup(e.target.files); }}
             />
             <input
               ref={vaultFileInputRef}
@@ -1862,30 +1917,16 @@ export default function Silo() {
             </AnimatePresence>
           </div>
         </div>
-      </div>
-
-      {(importQueueCount > 0 || !opfsReady) && (
-        <div style={{ padding: "0 28px 10px", fontSize: 11, color: "#3A3A38", lineHeight: 1.45 }}>
-          {importQueueCount > 0 && (
-            <span style={{ color: shareQueueFailedCount > 0 ? "#C8963E" : "#5BC8C4", display: "block" }}>
-              {shareQueueFailedCount > 0
-                ? `${shareQueueFailedCount} share import(s) failed — Settings → Retry`
-                : `${importQueueCount} share(s) queued`}
-            </span>
-          )}
-          {!opfsReady && <span>On-device vault unavailable here — demo only.</span>}
-        </div>
-      )}
 
       {ingestError && (
-        <div style={{ padding: "0 28px 12px", fontSize: 11, color: "#C86E8A" }}>
+        <div style={{ padding: "0 var(--space-6) var(--space-3)", fontSize: "var(--text-xs)", color: "var(--color-danger)" }}>
           {ingestError}
         </div>
       )}
 
-      <div style={{ padding: "12px 28px 8px", display: "flex", flexWrap: "wrap", gap: 12, alignItems: "stretch" }}>
-        <label style={{ display: "flex", flexDirection: "column", gap: 6, flex: "1 1 160px", minWidth: 0 }}>
-          <span style={{ fontSize: 10, color: "#3A3A38", letterSpacing: "0.1em", textTransform: "uppercase" }}>View</span>
+      <div className="vault-filters-row vault-filters-row--mobile-only">
+        <label className="vault-select-label">
+          <span>View</span>
           <select
             className="vault-select"
             aria-label="Smart view"
@@ -1894,6 +1935,7 @@ export default function Silo() {
               const v = e.target.value;
               setSmartView(v);
               if (v) setActiveTag("All");
+              bumpMeaningfulInteraction();
             }}
           >
             <option value="">All items</option>
@@ -1902,13 +1944,16 @@ export default function Silo() {
             ))}
           </select>
         </label>
-        <label style={{ display: "flex", flexDirection: "column", gap: 6, flex: "1 1 160px", minWidth: 0 }}>
-          <span style={{ fontSize: 10, color: "#3A3A38", letterSpacing: "0.1em", textTransform: "uppercase" }}>Category</span>
+        <label className="vault-select-label">
+          <span>Category</span>
           <select
             className="vault-select"
             aria-label="Filter by category"
             value={activeTag}
-            onChange={(e) => setActiveTag(e.target.value)}
+            onChange={(e) => {
+              setActiveTag(e.target.value);
+              bumpMeaningfulInteraction();
+            }}
           >
             {ALL_TAGS.map((tag) => (
               <option key={tag} value={tag}>{tag}</option>
@@ -1917,130 +1962,68 @@ export default function Silo() {
         </label>
       </div>
 
-      {/* Active search note */}
       <AnimatePresence>
         {query && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            style={{ padding: "12px 28px 0", fontSize: 10, color: "#848480" }}
+            className="search-hint-row"
           >
-            Hybrid search (keywords + on-device meaning) for "{query}"
+            {semanticSearchEnabled
+              ? `Hybrid search (keywords + on-device meaning) for "${query}"`
+              : `Keyword search for "${query}"`}
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ── Document List ── */}
-      <div style={{ marginTop: 30 }}>
+      <div style={{ marginTop: "var(--space-6)" }} role="listbox" aria-label="Documents">
         {!hasResults ? (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            style={{ textAlign: "center", padding: "60px 28px", color: "#3A3A38" }}
-          >
-            <div style={{ fontSize: 32, marginBottom: 12 }}>⊘</div>
-            <div style={{ fontSize: 14, marginBottom: 8 }}>No documents found</div>
-            <div style={{ fontSize: 12, marginBottom: 20, color: "#2a2a2a" }}>
-              Try a different search or filter
-            </div>
-            <button
-              onClick={() => { setQuery(""); setActiveTag("All"); }}
-              style={{
-                background: "transparent", border: "1px solid #2a2a2a",
-                borderRadius: 20, padding: "8px 20px", color: "#848480",
-                fontSize: 12, cursor: "pointer", fontFamily: "var(--mono)",
-              }}
-            >
-              Clear filters
-            </button>
-          </motion.div>
+          <EmptyState
+            variant={emptyVariant}
+            onAction={(action) => {
+              if (action === "ingest" || action === "ingest-audio") handlePickVaultFile();
+            }}
+          />
         ) : (
-          <LayoutGroup>
-            {Object.entries(display).map(([tag, items]) => (
-              <motion.div layout key={tag} style={{ marginBottom: 30 }}>
-                <div style={{
-                  padding: "0 28px", fontSize: 10,
-                  color: tagMeta(tag).color,
-                  letterSpacing: "0.2em", marginBottom: 12, textTransform: "uppercase",
-                }}>
-                  {tag}
-                </div>
-                <AnimatePresence>
-                  {items.map((doc) => (
-                    <motion.div
-                      layout
-                      initial={{ opacity: 0, scale: 0.98 }}
-                      animate={{ opacity: 1, scale: 1  }}
-                      exit={{    opacity: 0, scale: 0.95 }}
-                      whileTap={{ scale: 0.97 }}
-                      key={doc.id}
-                      className="doc-card"
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`${doc.name}, ${doc.tag}, ${doc.date}, ${doc.size}`}
-                      onPointerDown={(e) => handlePointerDown(doc, e)}
-                      onPointerUp={() => handlePointerUp(doc)}
-                      onPointerCancel={handlePointerCancel}
-                      onKeyDown={(e) => handleCardKeyDown(doc, e)}
-                    >
-                      <div style={{
-                        width: 40, height: 48, borderRadius: 12, flexShrink: 0,
-                        background: tagMeta(doc.tag).bg, color: tagMeta(doc.tag).color,
-                        display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: 2, padding: 6,
-                      }}>
-                        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.06em" }}>
-                          {kindLabel(doc.kind || "pdf", doc.storage)}
-                        </span>
-                        <div style={{ height: 2, borderRadius: 1, background: "currentColor", width: "100%", opacity: 0.35 }} />
-                        <div style={{ height: 2, borderRadius: 1, background: "currentColor", width: "55%", opacity: 0.25 }} />
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {doc.name}
-                        </div>
-                        <div style={{ fontSize: 10, color: "#3A3A38", marginTop: 4 }}>
-                          {doc.date} · {doc.size}
-                        </div>
-                      </div>
-                      <div style={{ fontSize: 16, color: "#3A3A38", flexShrink: 0 }} aria-hidden="true">›</div>
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-              </motion.div>
-            ))}
-          </LayoutGroup>
+          <DocumentList
+            display={display}
+            query={query}
+            contentById={contentById}
+            onDocOpen={handlePointerUp}
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
+            onCardKeyDown={handleCardKeyDown}
+          />
         )}
       </div>
+        </div>
 
-      {/* ── Search Bar ── */}
-      <div className="search-pill" role="search">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3A3A38" strokeWidth="2.5" aria-hidden="true">
-          <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-        <input
-          ref={searchRef}
-          className="search-input"
-          placeholder="Search silo…"
-          value={query}
-          onChange={(e) => handleQueryChange(e.target.value)}
-          onBlur={handleSearchBlur}
-          aria-label="Search documents"
-        />
-        <AnimatePresence>
-          {query && (
-            <motion.button
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1   }}
-              exit={{    opacity: 0, scale: 0.8  }}
-              className="icon-btn"
-              onClick={() => { setQuery(""); searchRef.current?.focus(); }}
-              aria-label="Clear search"
-            >
-              ✕
-            </motion.button>
-          )}
-        </AnimatePresence>
+        <div className="search-dock">
+          <SearchBar
+            value={query}
+            onChange={handleQueryChange}
+            isSearching={embeddingSearchBusy && !!query.trim()}
+            semanticReady={!semanticSearchEnabled || embeddingModelReady}
+            semanticLabel={semanticSearchEnabled ? (embeddingModelReady ? "Semantic ✓" : "Loading AI…") : ""}
+            placeholder="Search vault…"
+            onBlur={handleSearchBlur}
+          />
+        </div>
       </div>
+
+      <BottomNav
+        activeTab={mobileTab}
+        onTabChange={(id) => {
+          setMobileTab(id);
+          bumpMeaningfulInteraction();
+        }}
+        onAdd={() => {
+          setAddMenuOpen(true);
+          bumpMeaningfulInteraction();
+        }}
+      />
 
       {/* ── Overlays ── */}
       <AnimatePresence>

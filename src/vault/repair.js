@@ -42,6 +42,6 @@ export async function repairVaultEntry(vault, entry, getBlob, vaultPassphrase) {
     const combined = `${entry.name} ${entry.tag} ${kind} ${indexText}`.trim();
     const { embedText } = await import("./embeddings.js");
     const vec = await embedText(combined);
-    await persistEmbedding(vault, id, vec);
+    if (vec) await persistEmbedding(vault, id, vec);
   }
 }
