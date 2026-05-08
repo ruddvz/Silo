@@ -32,6 +32,13 @@ if (fs.existsSync(manifestPath)) {
       }
     }
   }
+  if (manifest.screenshots && Array.isArray(manifest.screenshots)) {
+    for (const shot of manifest.screenshots) {
+      if (typeof shot.src === "string" && shot.src.startsWith("/")) {
+        shot.src = `${rootPrefix}${shot.src}`.replace(/\/{2,}/g, "/");
+      }
+    }
+  }
   if (manifest.share_target) {
     manifest.share_target.action = `${rootPrefix}/share`.replace(/\/{2,}/g, "/");
   }

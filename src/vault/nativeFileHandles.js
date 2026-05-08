@@ -65,6 +65,21 @@ export async function removeLinkedFileHandle(id) {
   }
 }
 
+/** Clears all stored file handles (e.g. before full vault reset). */
+export async function clearAllLinkedFileHandles() {
+  try {
+    const db = await openDb();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.objectStore(STORE).clear();
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * @param {FileSystemFileHandle} handle
  * @returns {Promise<boolean>}

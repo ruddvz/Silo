@@ -10,6 +10,7 @@ import {
   readVaultBlobFile,
   persistEmbedding,
   loadEmbedding,
+  clearAllEmbeddingsForVault,
 } from "./vault/opfs.js";
 import {
   supportsNativeFileSystemLink,
@@ -17,6 +18,7 @@ import {
   storeLinkedFileHandle,
   getLinkedFile,
   removeLinkedFileHandle,
+  clearAllLinkedFileHandles,
 } from "./vault/nativeFileHandles.js";
 import { buildVaultSearchIndex } from "./vault/searchIndex.js";
 import { topMatchingDocIds } from "./vault/vectorSearch.js";
@@ -30,7 +32,7 @@ import {
   requestShareQueueBackgroundSync,
 } from "./vault/shareQueue.js";
 import { buildVaultZip, parseVaultZip, applyVaultZipToOpfs } from "./vault/exportBackup.js";
-import { persistSecureText, decodeStoredText } from "./vault/secureText.js";
+import { persistSecureText, decodeStoredText, isEncryptedStoredPayload, isPassphraseActive } from "./vault/secureText.js";
 import { sha256HexFromBlob } from "./vault/fileHash.js";
 import { textContentFingerprint } from "./vault/textFingerprint.js";
 import { checkVaultIntegrity } from "./vault/integrity.js";
@@ -47,6 +49,10 @@ import { InstallBanner } from "./components/InstallBanner.jsx";
 import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
 import { Banner } from "./components/Banner.jsx";
 import { VaultSkeletonList } from "./components/VaultSkeletonList.jsx";
+import { IngestDialog } from "./components/IngestDialog.jsx";
+import { PreviewPanel } from "./components/PreviewPanel.jsx";
+import { SettingsDrawer } from "./components/SettingsDrawer.jsx";
+import { UnlockScreen } from "./components/UnlockScreen.jsx";
 import { useStorageMode } from "./hooks/useStorageMode.js";
 import { usePWAInstall, bumpMeaningfulInteraction } from "./hooks/usePWAInstall.js";
 import "./silo-app.css";
@@ -416,51 +422,6 @@ function NoteModal({ onSave, onCancel }) {
   );
 }
 
-function SettingsDrawer({ onClose, actions }) {
-  const firstRef = useRef(null);
-  useEffect(() => {
-    firstRef.current?.focus();
-    const handler = (e) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
-
-  return (
-    <>
-      <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", zIndex: 1100 }}
-        onClick={onClose}
-      />
-      <motion.div
-        initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-        transition={{ type: "spring", damping: 28, stiffness: 300 }}
-        className="settings-sheet-panel"
-        role="dialog" aria-modal="true" aria-label="Settings"
-      >
-        <div style={{ width: 36, height: 4, background: "var(--color-border)", borderRadius: 2, margin: "0 auto 20px" }} />
-        <div className="settings-sheet-title">Vault tools</div>
-        {actions.map((opt, i) => (
-          <button
-            key={opt.id}
-            ref={i === 0 ? firstRef : null}
-            type="button"
-            disabled={opt.disabled}
-            className={`settings-row ${opt.danger ? "settings-row--danger" : ""}`}
-            onClick={() => {
-              opt.onSelect?.();
-              if (!opt.keepOpen) onClose();
-            }}
-          >
-            <span>{opt.label}</span>
-            <span style={{ color: "var(--color-text-muted)", fontSize: 16 }}>{opt.icon}</span>
-          </button>
-        ))}
-      </motion.div>
-    </>
-  );
-}
-
 function ContextMenu({ doc, onAction, onClose }) {
   const firstRef = useRef(null);
 
@@ -558,8 +519,6 @@ export default function Silo() {
   const vaultFileInputRef = useRef(null);
   const backupImportRef = useRef(null);
   const processAllPendingSharesRef = useRef(async () => {});
-  const addMenuRef = useRef(null);
-  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState("vault");
   const [ingestStage, setIngestStage] = useState(/** @type {string | null} */ (null));
   const [ingestOverlayName, setIngestOverlayName] = useState(/** @type {string | null} */ (null));
@@ -575,9 +534,57 @@ export default function Silo() {
   const [vaultListLoading, setVaultListLoading] = useState(true);
   const [fileDropActive, setFileDropActive] = useState(false);
   const [confirmDeleteDoc, setConfirmDeleteDoc] = useState(null);
+  const [previewDoc, setPreviewDoc] = useState(null);
+  const [ingestDialogOpen, setIngestDialogOpen] = useState(false);
+  const [vaultUnlockGate, setVaultUnlockGate] = useState(false);
+  const [unlockError, setUnlockError] = useState(null);
+  const [confirmResetOpen, setConfirmResetOpen] = useState(false);
+  const [theme, setTheme] = useState(() => (typeof localStorage !== "undefined" ? localStorage.getItem("silo_theme") : null) || "system");
+  const [density, setDensity] = useState(
+    () => (typeof localStorage !== "undefined" ? localStorage.getItem("silo_density") : null) || "comfortable",
+  );
+  const [storageStats, setStorageStats] = useState(/** @type {{ usage: number, quota: number } | null} */ (null));
 
   const storageMode = useStorageMode();
   const { showBanner: showInstallBanner, deferredPrompt, install: pwaInstall, dismiss: dismissInstallBanner } = usePWAInstall();
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("silo_theme", theme);
+    } catch {
+      /* ignore */
+    }
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => {
+      let t = theme;
+      if (t === "system") t = mq.matches ? "dark" : "light";
+      document.documentElement.dataset.theme = t === "light" ? "light" : "dark";
+    };
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, [theme]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("silo_density", density);
+    } catch {
+      /* ignore */
+    }
+    document.documentElement.dataset.density = density === "compact" ? "compact" : "comfortable";
+  }, [density]);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    void (async () => {
+      try {
+        const est = await navigator.storage?.estimate?.();
+        if (est) setStorageStats({ usage: Number(est.usage) || 0, quota: Number(est.quota) || 0 });
+      } catch {
+        setStorageStats(null);
+      }
+    })();
+  }, [settingsOpen]);
 
   useEffect(() => {
     setSharePanelDismissed(false);
@@ -626,18 +633,13 @@ export default function Silo() {
   }, []);
 
   useEffect(() => {
-    if (!addMenuOpen) return;
-    const close = (e) => {
-      if (addMenuRef.current && !addMenuRef.current.contains(e.target)) setAddMenuOpen(false);
+    if (!ingestDialogOpen) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setIngestDialogOpen(false);
     };
-    const onKey = (e) => { if (e.key === "Escape") setAddMenuOpen(false); };
-    document.addEventListener("pointerdown", close, true);
     window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", close, true);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [addMenuOpen]);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [ingestDialogOpen]);
 
   useEffect(() => {
     void import("./vault/embeddings.js")
@@ -667,17 +669,25 @@ export default function Silo() {
         if (cancelled) return;
         if (!vault) {
           setOpfsReady(false);
+          setVaultUnlockGate(false);
           return;
         }
         vaultRef.current = vault;
         setOpfsReady(true);
         const entries = await loadManifest(vault);
-        if (cancelled || !entries.length) return;
+        if (cancelled || !entries.length) {
+          setVaultUnlockGate(false);
+          return;
+        }
 
         const localRows = [];
         const contentUpdates = {};
+        let needsUnlock = false;
         for (const e of entries) {
           const raw = await loadExtractedText(vault, e.id);
+          if (isEncryptedStoredPayload(raw ?? "") && !isPassphraseActive(vaultPassphrase)) {
+            needsUnlock = true;
+          }
           const txt = await decodeStoredText(raw ?? "", vaultPassphrase);
           localRows.push({
             id: e.id,
@@ -693,6 +703,15 @@ export default function Silo() {
             sizeBytes: e.sizeBytes,
           });
           contentUpdates[e.id] = txt ?? "";
+        }
+        try {
+          if (typeof sessionStorage !== "undefined" && sessionStorage.getItem("silo_unlock_skip") === "1") {
+            setVaultUnlockGate(false);
+          } else {
+            setVaultUnlockGate(needsUnlock);
+          }
+        } catch {
+          setVaultUnlockGate(needsUnlock);
         }
         setDocs((prev) => mergeDocs(prev.filter((d) => d.source !== "local"), localRows));
         setContentById((prev) => ({ ...prev, ...contentUpdates }));
@@ -1524,6 +1543,21 @@ export default function Silo() {
       },
     },
     {
+      id: "clearemb",
+      label: "Clear semantic index",
+      icon: "◇",
+      disabled: !opfsReady || ingestBusy,
+      onSelect: () => { void handleClearSemanticIndex(); },
+    },
+    {
+      id: "resetvault",
+      label: "Reset vault (delete all local data)",
+      icon: "⚠",
+      danger: true,
+      disabled: !opfsReady || ingestBusy,
+      onSelect: () => { setConfirmResetOpen(true); },
+    },
+    {
       id: "pass",
       label: "Set vault passphrase (encrypts index text)",
       icon: "🔒",
@@ -1586,6 +1620,8 @@ export default function Silo() {
     handleClearShareQueue,
     handleRetryShareImports,
     importQueueCount,
+    handleClearSemanticIndex,
+    opfsReady,
     ingestBusy,
     semanticSearchEnabled,
     rewrapAllVaultText,
@@ -1602,6 +1638,7 @@ export default function Silo() {
   }, []);
 
   const handlePointerUp = useCallback((doc) => {
+    setPreviewDoc(doc);
     if (pressTimer.current) {
       clearTimeout(pressTimer.current);
       pressTimer.current = null;
@@ -1642,6 +1679,97 @@ export default function Silo() {
     }
   }, [showToast]);
 
+  const handleClearSemanticIndex = useCallback(async () => {
+    const vault = vaultRef.current;
+    if (!vault) {
+      showToast("No vault");
+      return;
+    }
+    setIngestBusy(true);
+    try {
+      const entries = await loadManifest(vault);
+      await clearAllEmbeddingsForVault(vault);
+      setEmbeddingsById((prev) => {
+        const next = { ...prev };
+        for (const e of entries) delete next[String(e.id)];
+        return next;
+      });
+      showToast("Semantic embeddings cleared");
+    } catch (e) {
+      console.error(e);
+      showToast("Could not clear embeddings");
+    } finally {
+      setIngestBusy(false);
+    }
+  }, [showToast]);
+
+  const executeResetVault = useCallback(async () => {
+    setConfirmResetOpen(false);
+    const vault = vaultRef.current;
+    if (!vault) {
+      showToast("No vault to reset");
+      return;
+    }
+    setIngestBusy(true);
+    try {
+      const entries = await loadManifest(vault);
+      for (const e of entries) {
+        await deleteVaultItem(vault, e.id);
+        await removeLinkedFileHandle(String(e.id));
+      }
+      await saveManifest(vault, []);
+      await clearAllLinkedFileHandles();
+      setDocs(SEED_DOCS.map((d) => ({ ...d, kind: d.kind || "pdf" })));
+      const demoContent = {};
+      for (const d of SEED_DOCS) {
+        if (d.kind === "text" && DEMO_TEXT_BODY[d.id]) demoContent[d.id] = DEMO_TEXT_BODY[d.id];
+        else demoContent[d.id] = `${String(d.name).replace(/\.(pdf|txt)$/i, "").replace(/_/g, " ")} ${d.tag} ${DEMO_INDEX_BOOST[d.id] || ""}`;
+      }
+      setContentById(demoContent);
+      setEmbeddingsById({});
+      setPreviewDoc(null);
+      setVaultUnlockGate(false);
+      setVaultEpoch((x) => x + 1);
+      showToast("Vault reset — demo items restored");
+    } catch (e) {
+      console.error(e);
+      showToast("Reset failed");
+    } finally {
+      setIngestBusy(false);
+    }
+  }, [showToast]);
+
+  const handleVaultUnlock = useCallback(
+    (passphrase) => {
+      setUnlockError(null);
+      if (!isPassphraseActive(passphrase)) {
+        setUnlockError("Passphrase must be at least 8 characters.");
+        return;
+      }
+      try {
+        sessionStorage.removeItem("silo_unlock_skip");
+      } catch {
+        /* ignore */
+      }
+      setVaultPassphrase(passphrase);
+      setVaultUnlockGate(false);
+      setVaultEpoch((x) => x + 1);
+      showToast("Vault unlocked");
+    },
+    [showToast],
+  );
+
+  const handleVaultUnlockSkip = useCallback(() => {
+    try {
+      sessionStorage.setItem("silo_unlock_skip", "1");
+    } catch {
+      /* ignore */
+    }
+    setVaultUnlockGate(false);
+    setUnlockError(null);
+    showToast("Browsing without full decryption — some text may be unreadable until you unlock.");
+  }, [showToast]);
+
   const handleCardKeyDown = useCallback((doc, e) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
@@ -1652,6 +1780,28 @@ export default function Silo() {
       setContextMenu({ doc });
     }
   }, [handleOpenDoc]);
+
+  const handleDownloadDoc = useCallback(
+    (doc) => {
+      void (async () => {
+        if (doc.source === "local" && vaultRef.current) {
+          const f = await resolveLocalFile(doc);
+          if (f) {
+            const url = URL.createObjectURL(f);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = doc.name;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast(`Saved ${doc.name}`);
+            return;
+          }
+        }
+        showToast(`Downloading ${doc.name}…`);
+      })();
+    },
+    [resolveLocalFile, showToast],
+  );
 
   const handleAction = useCallback((action, doc) => {
     setContextMenu(null);
@@ -1668,24 +1818,9 @@ export default function Silo() {
     }
     if (action === "Share") { showToast(`Sharing ${doc.name}…`); return; }
     if (action === "Download") {
-      (async () => {
-        if (doc.source === "local" && vaultRef.current) {
-          const f = await resolveLocalFile(doc);
-          if (f) {
-            const url = URL.createObjectURL(f);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = doc.name;
-            a.click();
-            URL.revokeObjectURL(url);
-            showToast(`Saved ${doc.name}`);
-            return;
-          }
-        }
-        showToast(`Downloading ${doc.name}…`);
-      })();
+      handleDownloadDoc(doc);
     }
-  }, [showToast, resolveLocalFile, contentById]);
+  }, [showToast, contentById, handleDownloadDoc]);
 
   const handleRename = useCallback(async (renamedDoc, newName) => {
     const docId = renamedDoc.id;
@@ -1756,13 +1891,31 @@ export default function Silo() {
     return undefined;
   }, [mobileTab]);
 
+  useEffect(() => {
+    if (previewDoc && !docs.some((d) => d.id === previewDoc.id)) setPreviewDoc(null);
+  }, [docs, previewDoc]);
+
   return (
     <div className="app-shell">
+      {vaultUnlockGate && opfsReady && (
+        <UnlockScreen onUnlock={handleVaultUnlock} onSkip={handleVaultUnlockSkip} error={unlockError} />
+      )}
+
       {showInstallBanner && deferredPrompt && (
         <div style={{ gridColumn: "1 / -1", paddingTop: "var(--safe-top)" }}>
           <InstallBanner onInstall={() => void pwaInstall()} onDismiss={dismissInstallBanner} />
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmResetOpen}
+        title="Reset entire vault?"
+        body="This deletes all documents stored in Silo on this device (OPFS). Demo sample documents will return. Linked file handles are cleared. This cannot be undone."
+        confirmLabel="Yes, reset vault"
+        confirmVariant="danger"
+        onConfirm={() => { void executeResetVault(); }}
+        onCancel={() => setConfirmResetOpen(false)}
+      />
 
       <ConfirmDialog
         open={confirmMergeOpen}
@@ -1924,7 +2077,7 @@ export default function Silo() {
             >
               Your vault
             </motion.h1>
-            <div ref={addMenuRef} className="add-menu-wrap">
+            <div className="add-menu-wrap">
             <input
               ref={backupImportRef}
               type="file"
@@ -1945,56 +2098,16 @@ export default function Silo() {
               type="button"
               className="add-menu-trigger"
               disabled={ingestBusy}
-              aria-expanded={addMenuOpen}
-              aria-haspopup="menu"
-              onClick={() => setAddMenuOpen((o) => !o)}
+              aria-haspopup="dialog"
+              aria-expanded={ingestDialogOpen}
+              onClick={() => {
+                setIngestDialogOpen(true);
+                bumpMeaningfulInteraction();
+              }}
             >
               {ingestBusy ? "Saving…" : "Add"}
-              <span style={{ fontSize: 10, color: "#848480", marginLeft: 2 }} aria-hidden>▾</span>
+              <span style={{ fontSize: 10, color: "#848480", marginLeft: 2 }} aria-hidden>+</span>
             </button>
-            <AnimatePresence>
-              {addMenuOpen && !ingestBusy && (
-                <motion.div
-                  role="menu"
-                  initial={{ opacity: 0, y: -6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  transition={{ duration: 0.15 }}
-                  className="add-menu-panel"
-                >
-                  <div className="add-menu-hint">Copy into vault, link a file, or save a note.</div>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="add-menu-item"
-                    onClick={() => { setAddMenuOpen(false); handlePickVaultFile(); }}
-                  >
-                    Add file…
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="add-menu-item"
-                    disabled={!nativeLinkReady}
-                    title={nativeLinkReady ? "Keep file on disk (Chrome/Edge)" : "Requires Chromium desktop"}
-                    onClick={() => {
-                      setAddMenuOpen(false);
-                      void handleLinkFromDisk();
-                    }}
-                  >
-                    Link from disk…
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="add-menu-item"
-                    onClick={() => { setAddMenuOpen(false); setNoteModalOpen(true); }}
-                  >
-                    Text note…
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
           </div>
         </div>
 
@@ -2064,7 +2177,7 @@ export default function Silo() {
           <EmptyState
             variant={emptyVariant}
             onAction={(action) => {
-              if (action === "ingest" || action === "ingest-audio") handlePickVaultFile();
+              if (action === "ingest" || action === "ingest-audio") setIngestDialogOpen(true);
             }}
           />
         ) : (
@@ -2076,6 +2189,7 @@ export default function Silo() {
             onPointerDown={handlePointerDown}
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerCancel}
+            onSwipeDelete={(d) => setConfirmDeleteDoc(d)}
             onCardKeyDown={handleCardKeyDown}
           />
         )}
@@ -2095,6 +2209,17 @@ export default function Silo() {
         </div>
       </div>
 
+      <div className="app-shell__preview">
+        <PreviewPanel
+          doc={previewDoc}
+          onOpen={(d) => { void handleOpenDoc(d); }}
+          onExport={handleDownloadDoc}
+          onRename={(d) => setRenameDoc(d)}
+          onDelete={(d) => setConfirmDeleteDoc(d)}
+          onClose={() => setPreviewDoc(null)}
+        />
+      </div>
+
       <BottomNav
         activeTab={mobileTab}
         onTabChange={(id) => {
@@ -2102,9 +2227,19 @@ export default function Silo() {
           bumpMeaningfulInteraction();
         }}
         onAdd={() => {
-          setAddMenuOpen(true);
+          setIngestDialogOpen(true);
           bumpMeaningfulInteraction();
         }}
+      />
+
+      <IngestDialog
+        open={ingestDialogOpen}
+        onClose={() => setIngestDialogOpen(false)}
+        ingestBusy={ingestBusy}
+        nativeLinkReady={nativeLinkReady}
+        onAddFile={handlePickVaultFile}
+        onLinkDisk={() => { void handleLinkFromDisk(); }}
+        onNewNote={() => setNoteModalOpen(true)}
       />
 
       {/* ── Overlays ── */}
@@ -2118,7 +2253,43 @@ export default function Silo() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {settingsOpen && <SettingsDrawer onClose={() => setSettingsOpen(false)} actions={settingsActions} />}
+        {settingsOpen && (
+          <SettingsDrawer onClose={() => setSettingsOpen(false)} actions={settingsActions}>
+            <div className="settings-extras">
+              {storageStats && (
+                <p className="settings-meta">
+                  Storage (this origin): {(storageStats.usage / (1024 * 1024)).toFixed(1)} MB used
+                  {storageStats.quota ? ` of ${(storageStats.quota / (1024 * 1024)).toFixed(0)} MB quota` : ""}.
+                </p>
+              )}
+              <label className="settings-field">
+                <span>Theme</span>
+                <select
+                  className="vault-select"
+                  value={theme}
+                  onChange={(e) => setTheme(e.target.value)}
+                  aria-label="Color theme"
+                >
+                  <option value="system">System</option>
+                  <option value="dark">Dark</option>
+                  <option value="light">Light</option>
+                </select>
+              </label>
+              <label className="settings-field">
+                <span>Density</span>
+                <select
+                  className="vault-select"
+                  value={density}
+                  onChange={(e) => setDensity(e.target.value)}
+                  aria-label="List density"
+                >
+                  <option value="comfortable">Comfortable</option>
+                  <option value="compact">Compact</option>
+                </select>
+              </label>
+            </div>
+          </SettingsDrawer>
+        )}
       </AnimatePresence>
 
       <AnimatePresence>

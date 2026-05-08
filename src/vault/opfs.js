@@ -165,6 +165,19 @@ export async function loadEmbedding(vault, id) {
   return null;
 }
 
+/** Remove vector sidecar only (semantic index for one doc). */
+export async function deleteEmbeddingSidecar(vault, id) {
+  await deleteFileInVault(vault, "text", `${id}.emb.json`);
+}
+
+/** Drop all `.emb.json` sidecars (full-text search still works). */
+export async function clearAllEmbeddingsForVault(vault) {
+  const entries = await loadManifest(vault);
+  for (const e of entries) {
+    await deleteEmbeddingSidecar(vault, e.id);
+  }
+}
+
 /**
  * @param {FileSystemDirectoryHandle} vault
  * @param {string} id

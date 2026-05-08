@@ -1,13 +1,25 @@
 import { persistExtractedText } from "./opfs.js";
 import { encryptString, decryptString } from "./cryptoVault.js";
 
-const ENC_PREFIX = "ENC1:";
+export const ENC_PREFIX = "ENC1:";
+
+/**
+ * @param {string | null | undefined} passphrase
+ */
+export function isPassphraseActive(passphrase) {
+  return typeof passphrase === "string" && passphrase.length >= 8;
+}
+
+/** @param {string | null | undefined} raw */
+export function isEncryptedStoredPayload(raw) {
+  return typeof raw === "string" && raw.startsWith(ENC_PREFIX);
+}
 
 /**
  * @param {string | null | undefined} passphrase
  */
 function active(passphrase) {
-  return typeof passphrase === "string" && passphrase.length >= 8;
+  return isPassphraseActive(passphrase);
 }
 
 /**

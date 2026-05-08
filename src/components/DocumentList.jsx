@@ -12,6 +12,7 @@ import { DocumentCard } from "./DocumentCard.jsx";
  *   onPointerUp: (doc: object) => void,
  *   onPointerCancel: () => void,
  *   onCardKeyDown: (doc: object, e: import('react').KeyboardEvent) => void,
+ *   onSwipeDelete?: (doc: object) => void,
  * }} props
  */
 export function DocumentList({
@@ -23,8 +24,10 @@ export function DocumentList({
   onPointerUp,
   onPointerCancel,
   onCardKeyDown,
+  onSwipeDelete,
 }) {
   const parentRef = useRef(null);
+  const touchRef = useRef(/** @type {{ id: string|number, x: number } | null} */ (null));
 
   const flatRows = useMemo(() => {
     const rows = [];
@@ -78,6 +81,18 @@ export function DocumentList({
                   onPointerDown={(e) => onPointerDown(row.doc, e)}
                   onPointerUp={() => onPointerUp(row.doc)}
                   onPointerCancel={onPointerCancel}
+                  onTouchStart={(e) => {
+                    const t = e.touches[0];
+                    if (t) touchRef.current = { id: row.doc.id, x: t.clientX };
+                  }}
+                  onTouchEnd={(e) => {
+                    const start = touchRef.current;
+                    touchRef.current = null;
+                    if (!start || start.id !== row.doc.id || !onSwipeDelete) return;
+                    const t = e.changedTouches[0];
+                    if (!t) return;
+                    if (t.clientX - start.x < -72) onSwipeDelete(row.doc);
+                  }}
                 >
                   <DocumentCard
                     doc={row.doc}

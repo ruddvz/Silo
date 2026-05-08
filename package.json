@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build && node scripts/gh-pages-postbuild.mjs",
     "lint": "eslint .",
+    "gen:icons": "node scripts/gen-pwa-icons.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -30,6 +31,7 @@
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.19",
     "globals": "^15.15.0",
+    "sharp": "^0.34.5",
     "vite": "^6.2.0"
   }
 }
