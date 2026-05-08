@@ -31,24 +31,26 @@ jobs:
           VITE_BASE_URL: /${{ github.event.repository.name }}/
         run: npm run build
 
-      - name: Start preview server
+      # Preview + Axe must run in one step: GHA terminates background jobs when the step ends.
+      - name: Start preview, wait, then Axe scan
         run: |
-          npx vite preview --port 4173 --strictPort &
-          for i in $(seq 1 45); do
-            if curl -fsS "http://127.0.0.1:4173/${{ github.event.repository.name }}/" >/dev/null 2>&1; then
-              echo "preview up"
-              exit 0
+          set -euo pipefail
+          BASE_PATH="/${{ github.event.repository.name }}/"
+          PREVIEW_URL="http://127.0.0.1:4173${BASE_PATH}"
+          npx vite preview --port 4173 --strictPort --host 127.0.0.1 &
+          PREVIEW_PID=$!
+          trap 'kill "${PREVIEW_PID}" 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do
+            if curl -fsS "${PREVIEW_URL}" >/dev/null 2>&1; then
+              echo "preview up (${PREVIEW_URL})"
+              break
+            fi
+            if [ "$i" -eq 60 ]; then
+              echo "preview failed to respond in time"
+              exit 1
             fi
             sleep 1
           done
-          echo "preview failed to start"
-          exit 1
-
-      - name: Axe accessibility scan
-        run: |
-          npx @axe-core/cli \
-            "http://127.0.0.1:4173/${{ github.event.repository.name }}/" \
-            --exit \
-            --tags wcag2a
+          npx @axe-core/cli "${PREVIEW_URL}" --exit --tags wcag2a
 
       # Lighthouse often hits NO_FCP against local Vite preview in headless CI; run it locally after `vite preview` if needed (see docs/device-qa-checklist.md).
