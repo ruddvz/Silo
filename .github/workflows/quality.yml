@@ -1,0 +1,54 @@
+# Lint, production build, static preview, then Axe accessibility scan.
+name: Quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Production build (GitHub Pages base)
+        env:
+          VITE_BASE_URL: /${{ github.event.repository.name }}/
+        run: npm run build
+
+      - name: Start preview server
+        run: |
+          npx vite preview --port 4173 --strictPort &
+          for i in $(seq 1 45); do
+            if curl -fsS "http://127.0.0.1:4173/${{ github.event.repository.name }}/" >/dev/null 2>&1; then
+              echo "preview up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "preview failed to start"
+          exit 1
+
+      - name: Axe accessibility scan
+        run: |
+          npx @axe-core/cli \
+            "http://127.0.0.1:4173/${{ github.event.repository.name }}/" \
+            --exit \
+            --tags wcag2a
+
+      # Lighthouse often hits NO_FCP against local Vite preview in headless CI; run it locally after `vite preview` if needed (see docs/device-qa-checklist.md).

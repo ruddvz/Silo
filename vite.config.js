@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { VitePWA } from "vite-plugin-pwa";
 
 /** GitHub Project Pages: https://<user>.github.io/<repo>/ — set VITE_BASE_URL in CI */
 function viteBase() {
@@ -13,7 +14,25 @@ function viteBase() {
 
 export default defineConfig({
   base: viteBase(),
-  plugins: [react()],
+  plugins: [
+    react(),
+    VitePWA({
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.js",
+      registerType: "prompt",
+      injectRegister: null,
+      manifest: false,
+      injectManifest: {
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,webp,webmanifest,wasm,woff2}"],
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+      },
+      devOptions: {
+        enabled: true,
+        type: "module",
+      },
+    }),
+  ],
   optimizeDeps: {
     exclude: ["@xenova/transformers"],
   },

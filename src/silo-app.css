@@ -89,6 +89,23 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   padding-bottom: calc(100px + var(--safe-bottom));
+  position: relative;
+}
+
+/* Pull-to-refresh progress (mobile vault scroll surface) */
+.vault-ptr-indicator {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  height: 3px;
+  margin-bottom: -3px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-info));
+  border-radius: var(--radius-full);
+  pointer-events: none;
+  transition: opacity 0.15s ease;
 }
 
 @media (min-width: 900px) {
@@ -1411,6 +1428,14 @@ body {
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
   margin: 0 0 var(--space-4);
+}
+
+.ingest-dialog__section-label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-text-muted);
+  margin: var(--space-3) 0 var(--space-2);
 }
 
 .ingest-dialog__options {

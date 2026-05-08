@@ -61,6 +61,17 @@ import "./silo-app.css";
 /** Same artwork as favicon / PWA manifest (`public/icons/icon.svg`) */
 const APP_ICON_SRC = `${import.meta.env.BASE_URL}icons/icon.svg`.replace(/\/{2,}/g, "/");
 
+const DEFAULT_VAULT_FILE_ACCEPT =
+  ".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.heic,.heif,.m4a,.aac,.mp3,.wav,.webm,.ogg,.opus,.flac,application/pdf,image/*,audio/*";
+
+/** @type {Record<string, string>} */
+const VAULT_FILE_ACCEPT_BY_KIND = {
+  pdf: ".pdf,application/pdf",
+  image: ".png,.jpg,.jpeg,.gif,.webp,.bmp,.heic,.heif,image/*",
+  audio: ".m4a,.aac,.mp3,.wav,.webm,.ogg,.opus,.flac,audio/*",
+  any: DEFAULT_VAULT_FILE_ACCEPT,
+};
+
 // ─── Data ────────────────────────────────────────────────────────────────────
 
 const SEED_DOCS = [
@@ -519,6 +530,11 @@ export default function Silo() {
   const blurTimer        = useRef(null);
   const vaultRef         = useRef(null);
   const vaultFileInputRef = useRef(null);
+  const mainInnerRef = useRef(null);
+  const ptrTouchStartY = useRef(null);
+  const ptrPulling = useRef(false);
+  const ptrLastDy = useRef(0);
+  const [ptrBar, setPtrBar] = useState(0);
   const backupImportRef = useRef(null);
   const processAllPendingSharesRef = useRef(async () => {});
   const [mobileTab, setMobileTab] = useState("vault");
@@ -660,6 +676,69 @@ export default function Silo() {
   }, []);
 
   const showToast = useCallback((msg) => setToast(msg), []);
+
+  /** Pull-to-refresh vault list on narrow viewports (reload manifest + OPFS rows). */
+  useEffect(() => {
+    const el = mainInnerRef.current;
+    if (!el) return undefined;
+
+    const mobileVault = () => window.matchMedia("(max-width: 899px)").matches;
+    const PTR_RELEASE = 72;
+
+    const onTouchStart = (e) => {
+      if (!mobileVault()) return;
+      if (ingestBusy || vaultUnlockGate) return;
+      if (el.scrollTop > 2) return;
+      ptrTouchStartY.current = e.touches[0].clientY;
+      ptrPulling.current = true;
+      ptrLastDy.current = 0;
+    };
+
+    const onTouchMove = (e) => {
+      if (!mobileVault() || !ptrPulling.current || ptrTouchStartY.current == null) return;
+      if (el.scrollTop > 2) {
+        ptrPulling.current = false;
+        ptrTouchStartY.current = null;
+        setPtrBar(0);
+        return;
+      }
+      const dy = e.touches[0].clientY - ptrTouchStartY.current;
+      ptrLastDy.current = dy;
+      if (dy > 12) {
+        e.preventDefault();
+        setPtrBar(Math.min(1, dy / (PTR_RELEASE * 1.4)));
+      } else {
+        setPtrBar(0);
+      }
+    };
+
+    const onTouchEnd = () => {
+      if (!ptrPulling.current || ptrTouchStartY.current == null) {
+        ptrPulling.current = false;
+        setPtrBar(0);
+        return;
+      }
+      const dy = ptrLastDy.current;
+      ptrPulling.current = false;
+      ptrTouchStartY.current = null;
+      setPtrBar(0);
+      if (dy >= PTR_RELEASE && el.scrollTop <= 2) {
+        setVaultEpoch((n) => n + 1);
+        showToast("Vault refreshed");
+      }
+    };
+
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd);
+    el.addEventListener("touchcancel", onTouchEnd);
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, [ingestBusy, vaultUnlockGate, showToast]);
 
   // ── Load user vault from OPFS (manifest + extracted text) ──
   useEffect(() => {
@@ -949,8 +1028,11 @@ export default function Silo() {
     return v;
   }, []);
 
-  const handlePickVaultFile = useCallback(() => {
-    vaultFileInputRef.current?.click();
+  const handlePickVaultFiles = useCallback((kind) => {
+    const input = vaultFileInputRef.current;
+    if (!input) return;
+    input.accept = VAULT_FILE_ACCEPT_BY_KIND[kind] ?? DEFAULT_VAULT_FILE_ACCEPT;
+    input.click();
   }, []);
 
   const isDuplicateContent = useCallback(async (vault, { contentHash, textFingerprint }) => {
@@ -1095,7 +1177,10 @@ export default function Silo() {
       setIngestError(err?.message || "Could not save this file.");
     } finally {
       setIngestBusy(false);
-      if (vaultFileInputRef.current) vaultFileInputRef.current.value = "";
+      if (vaultFileInputRef.current) {
+        vaultFileInputRef.current.value = "";
+        vaultFileInputRef.current.accept = DEFAULT_VAULT_FILE_ACCEPT;
+      }
     }
   }, [ensureVault, ingestFromFile]);
 
@@ -2007,7 +2092,12 @@ export default function Silo() {
       </div>
 
       <div className="app-shell__main">
-        <div className="app-shell__main-inner">
+        <div ref={mainInnerRef} className="app-shell__main-inner">
+          <div
+            className="vault-ptr-indicator"
+            style={{ transform: `scaleX(${ptrBar})`, opacity: ptrBar > 0 ? 1 : 0 }}
+            aria-hidden
+          />
           {storageMode !== "checking" && storageMode !== "opfs" && (
             <Banner variant="warning">
               Private OPFS storage is not available in this browser session. Your vault may not persist.
@@ -2098,7 +2188,7 @@ export default function Silo() {
             <input
               ref={vaultFileInputRef}
               type="file"
-              accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.heic,.m4a,.aac,.mp3,.wav,.webm,.ogg,.opus,.flac,application/pdf,image/*,audio/*"
+              accept={DEFAULT_VAULT_FILE_ACCEPT}
               style={{ display: "none" }}
               aria-hidden="true"
               onChange={(e) => { void handleVaultFiles(e.target.files); }}
@@ -2246,7 +2336,10 @@ export default function Silo() {
         onClose={() => setIngestDialogOpen(false)}
         ingestBusy={ingestBusy}
         nativeLinkReady={nativeLinkReady}
-        onAddFile={handlePickVaultFile}
+        onPickFiles={(kind) => {
+          handlePickVaultFiles(kind);
+          setIngestDialogOpen(false);
+        }}
         onLinkDisk={() => { void handleLinkFromDisk(); }}
         onNewNote={() => setNoteModalOpen(true)}
       />

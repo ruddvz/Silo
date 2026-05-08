@@ -3,12 +3,16 @@ import { useEffect, useState } from "react";
 import { SPRING_GENTLE, useReducedMotion } from "../design/motion.js";
 
 /**
+ * @typedef {"pdf" | "image" | "audio" | "any"} VaultFileKind
+ */
+
+/**
  * @param {{
  *   open: boolean,
  *   onClose: () => void,
  *   ingestBusy: boolean,
  *   nativeLinkReady: boolean,
- *   onAddFile: () => void,
+ *   onPickFiles: (kind: VaultFileKind) => void,
  *   onLinkDisk: () => void,
  *   onNewNote: () => void,
  * }} props
@@ -18,7 +22,7 @@ export function IngestDialog({
   onClose,
   ingestBusy,
   nativeLinkReady,
-  onAddFile,
+  onPickFiles,
   onLinkDisk,
   onNewNote,
 }) {
@@ -63,25 +67,71 @@ export function IngestDialog({
             <h2 className="ingest-dialog__title">Add to vault</h2>
             <p className="ingest-dialog__subtitle">Files stay on this device.</p>
 
+            <p className="ingest-dialog__section-label">Copy into vault</p>
             <div className="ingest-dialog__options">
               <button
                 type="button"
                 className="ingest-option"
                 disabled={ingestBusy}
-                onClick={() => {
-                  onAddFile();
-                  onClose();
-                }}
+                onClick={() => onPickFiles("pdf")}
               >
                 <span className="ingest-option__icon" aria-hidden>
-                  📄
+                  📕
                 </span>
                 <span className="ingest-option__text">
-                  <span className="ingest-option__label">File</span>
-                  <span className="ingest-option__hint">PDF, image, or audio — copied into vault</span>
+                  <span className="ingest-option__label">PDF</span>
+                  <span className="ingest-option__hint">Extract text for search</span>
                 </span>
               </button>
 
+              <button
+                type="button"
+                className="ingest-option"
+                disabled={ingestBusy}
+                onClick={() => onPickFiles("image")}
+              >
+                <span className="ingest-option__icon" aria-hidden>
+                  🖼
+                </span>
+                <span className="ingest-option__text">
+                  <span className="ingest-option__label">Image</span>
+                  <span className="ingest-option__hint">OCR for screenshots & photos</span>
+                </span>
+              </button>
+
+              <button
+                type="button"
+                className="ingest-option"
+                disabled={ingestBusy}
+                onClick={() => onPickFiles("audio")}
+              >
+                <span className="ingest-option__icon" aria-hidden>
+                  🎙
+                </span>
+                <span className="ingest-option__text">
+                  <span className="ingest-option__label">Audio</span>
+                  <span className="ingest-option__hint">Local transcription (Whisper)</span>
+                </span>
+              </button>
+
+              <button
+                type="button"
+                className="ingest-option"
+                disabled={ingestBusy}
+                onClick={() => onPickFiles("any")}
+              >
+                <span className="ingest-option__icon" aria-hidden>
+                  📎
+                </span>
+                <span className="ingest-option__text">
+                  <span className="ingest-option__label">Other file</span>
+                  <span className="ingest-option__hint">Any type — stored as an attachment</span>
+                </span>
+              </button>
+            </div>
+
+            <p className="ingest-dialog__section-label">More</p>
+            <div className="ingest-dialog__options ingest-dialog__options--compact">
               <button
                 type="button"
                 className="ingest-option"
