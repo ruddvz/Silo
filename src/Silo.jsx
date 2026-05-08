@@ -46,6 +46,7 @@ import { ShareQueue } from "./components/ShareQueue.jsx";
 import { InstallBanner } from "./components/InstallBanner.jsx";
 import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
 import { Banner } from "./components/Banner.jsx";
+import { VaultSkeletonList } from "./components/VaultSkeletonList.jsx";
 import { useStorageMode } from "./hooks/useStorageMode.js";
 import { usePWAInstall, bumpMeaningfulInteraction } from "./hooks/usePWAInstall.js";
 import "./silo-app.css";
@@ -571,6 +572,9 @@ export default function Silo() {
   const [semanticSearchEnabled, setSemanticSearchEnabled] = useState(
     () => typeof localStorage !== "undefined" && localStorage.getItem("silo_semantic") !== "0",
   );
+  const [vaultListLoading, setVaultListLoading] = useState(true);
+  const [fileDropActive, setFileDropActive] = useState(false);
+  const [confirmDeleteDoc, setConfirmDeleteDoc] = useState(null);
 
   const storageMode = useStorageMode();
   const { showBanner: showInstallBanner, deferredPrompt, install: pwaInstall, dismiss: dismissInstallBanner } = usePWAInstall();
@@ -656,48 +660,55 @@ export default function Silo() {
   // ── Load user vault from OPFS (manifest + extracted text) ──
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const vault = await getVaultRoot();
-      if (cancelled) return;
-      if (!vault) {
-        setOpfsReady(false);
-        return;
-      }
-      vaultRef.current = vault;
-      setOpfsReady(true);
-      const entries = await loadManifest(vault);
-      if (cancelled || !entries.length) return;
+    setVaultListLoading(true);
+    void (async () => {
+      try {
+        const vault = await getVaultRoot();
+        if (cancelled) return;
+        if (!vault) {
+          setOpfsReady(false);
+          return;
+        }
+        vaultRef.current = vault;
+        setOpfsReady(true);
+        const entries = await loadManifest(vault);
+        if (cancelled || !entries.length) return;
 
-      const localRows = [];
-      const contentUpdates = {};
-      for (const e of entries) {
-        const raw = await loadExtractedText(vault, e.id);
-        const txt = await decodeStoredText(raw ?? "", vaultPassphrase);
-        localRows.push({
-          id: e.id,
-          name: e.name,
-          tag: e.tag,
-          kind: e.kind || "pdf",
-          storage: e.storage || "opfs",
-          contentHash: e.contentHash,
-          date: formatRelativeDate(e.createdAt),
-          size: formatBytes(e.sizeBytes),
-          source: "local",
-          createdAt: e.createdAt,
-          sizeBytes: e.sizeBytes,
-        });
-        contentUpdates[e.id] = txt ?? "";
+        const localRows = [];
+        const contentUpdates = {};
+        for (const e of entries) {
+          const raw = await loadExtractedText(vault, e.id);
+          const txt = await decodeStoredText(raw ?? "", vaultPassphrase);
+          localRows.push({
+            id: e.id,
+            name: e.name,
+            tag: e.tag,
+            kind: e.kind || "pdf",
+            storage: e.storage || "opfs",
+            contentHash: e.contentHash,
+            date: formatRelativeDate(e.createdAt),
+            size: formatBytes(e.sizeBytes),
+            source: "local",
+            createdAt: e.createdAt,
+            sizeBytes: e.sizeBytes,
+          });
+          contentUpdates[e.id] = txt ?? "";
+        }
+        setDocs((prev) => mergeDocs(prev.filter((d) => d.source !== "local"), localRows));
+        setContentById((prev) => ({ ...prev, ...contentUpdates }));
+        const embMap = {};
+        for (const e of entries) {
+          const emb = await loadEmbedding(vault, e.id);
+          if (emb) embMap[String(e.id)] = emb;
+        }
+        setEmbeddingsById((prev) => ({ ...prev, ...embMap }));
+      } finally {
+        if (!cancelled) setVaultListLoading(false);
       }
-      setDocs((prev) => mergeDocs(prev.filter((d) => d.source !== "local"), localRows));
-      setContentById((prev) => ({ ...prev, ...contentUpdates }));
-      const embMap = {};
-      for (const e of entries) {
-        const emb = await loadEmbedding(vault, e.id);
-        if (emb) embMap[String(e.id)] = emb;
-      }
-      setEmbeddingsById((prev) => ({ ...prev, ...embMap }));
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [vaultPassphrase, vaultEpoch]);
 
   const searchIndex = useMemo(() => {
@@ -1066,6 +1077,23 @@ export default function Silo() {
       if (vaultFileInputRef.current) vaultFileInputRef.current.value = "";
     }
   }, [ensureVault, ingestFromFile]);
+
+  useEffect(() => {
+    const onEnter = (e) => {
+      if (e.dataTransfer?.types && [...e.dataTransfer.types].includes("Files")) setFileDropActive(true);
+    };
+    document.addEventListener("dragenter", onEnter);
+    return () => document.removeEventListener("dragenter", onEnter);
+  }, []);
+
+  useEffect(() => {
+    if (!fileDropActive) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setFileDropActive(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fileDropActive]);
 
   const handleLinkFromDisk = useCallback(async () => {
     const vault = await ensureVault();
@@ -1586,6 +1614,34 @@ export default function Silo() {
     pressTimer.current = null;
   }, []);
 
+  const performDeleteDoc = useCallback(async (doc) => {
+    if (!doc) return;
+    setConfirmDeleteDoc(null);
+    try {
+      if (doc.source === "local" && vaultRef.current) {
+        await deleteVaultItem(vaultRef.current, String(doc.id));
+        await removeLinkedFileHandle(String(doc.id));
+        const entries = await loadManifest(vaultRef.current);
+        await saveManifest(vaultRef.current, entries.filter((e) => String(e.id) !== String(doc.id)));
+      }
+      setDocs((prev) => prev.filter((d) => d.id !== doc.id));
+      setContentById((prev) => {
+        const next = { ...prev };
+        delete next[doc.id];
+        return next;
+      });
+      setEmbeddingsById((prev) => {
+        const next = { ...prev };
+        delete next[String(doc.id)];
+        return next;
+      });
+      showToast(`Deleted ${doc.name}`);
+    } catch (err) {
+      console.error(err);
+      showToast(err?.message || "Could not delete item.");
+    }
+  }, [showToast]);
+
   const handleCardKeyDown = useCallback((doc, e) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
@@ -1607,26 +1663,7 @@ export default function Silo() {
     }
     if (action === "Rename") { setRenameDoc(doc); return; }
     if (action === "Delete") {
-      (async () => {
-        if (doc.source === "local" && vaultRef.current) {
-          await deleteVaultItem(vaultRef.current, String(doc.id));
-          await removeLinkedFileHandle(String(doc.id));
-          const entries = await loadManifest(vaultRef.current);
-          await saveManifest(vaultRef.current, entries.filter((e) => String(e.id) !== String(doc.id)));
-        }
-      })();
-      setDocs((prev) => prev.filter((d) => d.id !== doc.id));
-      setContentById((prev) => {
-        const next = { ...prev };
-        delete next[doc.id];
-        return next;
-      });
-      setEmbeddingsById((prev) => {
-        const next = { ...prev };
-        delete next[String(doc.id)];
-        return next;
-      });
-      showToast(`Deleted ${doc.name}`);
+      setConfirmDeleteDoc(doc);
       return;
     }
     if (action === "Share") { showToast(`Sharing ${doc.name}…`); return; }
@@ -1742,6 +1779,49 @@ export default function Silo() {
       />
 
       <IngestProgress stage={ingestStage} fileName={ingestOverlayName} />
+
+      <ConfirmDialog
+        open={confirmDeleteDoc != null}
+        title="Delete this document?"
+        body={
+          confirmDeleteDoc
+            ? `“${confirmDeleteDoc.name}” will be removed from the vault. This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        onConfirm={() => {
+          if (confirmDeleteDoc) void performDeleteDoc(confirmDeleteDoc);
+        }}
+        onCancel={() => setConfirmDeleteDoc(null)}
+      />
+
+      <AnimatePresence>
+        {fileDropActive && (
+          <motion.div
+            key="drop"
+            className="drop-overlay drop-overlay--interactive"
+            role="presentation"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "copy";
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setFileDropActive(false);
+              if (e.dataTransfer.files?.length) void handleVaultFiles(e.dataTransfer.files);
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget)) setFileDropActive(false);
+            }}
+          >
+            <div className="drop-overlay__label">Drop file to add to vault</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="app-shell__sidebar">
         <Sidebar
@@ -1977,8 +2057,10 @@ export default function Silo() {
         )}
       </AnimatePresence>
 
-      <div style={{ marginTop: "var(--space-6)" }} role="listbox" aria-label="Documents">
-        {!hasResults ? (
+      <div style={{ marginTop: "var(--space-6)" }} role="listbox" aria-label="Documents" aria-busy={vaultListLoading}>
+        {vaultListLoading ? (
+          <VaultSkeletonList rows={8} />
+        ) : !hasResults ? (
           <EmptyState
             variant={emptyVariant}
             onAction={(action) => {
