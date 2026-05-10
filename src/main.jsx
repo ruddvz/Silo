@@ -5,8 +5,10 @@ import Silo from "./Silo.jsx";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    const swPath = new URL("sw.js", import.meta.env.BASE_URL).pathname;
-    navigator.serviceWorker.register(swPath, { scope: import.meta.env.BASE_URL }).catch(() => {});
+    const base = (import.meta.env.BASE_URL || "/").replace(/\/{2,}/g, "/");
+    const scope = base.endsWith("/") ? base : `${base}/`;
+    const swPath = `${scope}sw.js`.replace(/\/{2,}/g, "/");
+    navigator.serviceWorker.register(swPath, { scope }).catch(() => {});
   });
 }
 

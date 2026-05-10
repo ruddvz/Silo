@@ -17,7 +17,17 @@ function normalizeBase(raw) {
   return b;
 }
 
-const base = normalizeBase(process.env.VITE_BASE_URL);
+/** Match `vite.config.js`: infer Project Pages base on GitHub Actions when unset. */
+function effectiveBaseRaw() {
+  let raw = process.env.VITE_BASE_URL;
+  if ((raw == null || raw === "") && process.env.GITHUB_REPOSITORY) {
+    const name = process.env.GITHUB_REPOSITORY.split("/")[1];
+    if (name) raw = `/${name}/`;
+  }
+  return raw;
+}
+
+const base = normalizeBase(effectiveBaseRaw());
 const rootPrefix = base === "/" ? "" : base.replace(/\/$/, "");
 
 const manifestPath = path.join(dist, "manifest.webmanifest");
@@ -41,6 +51,16 @@ if (fs.existsSync(manifestPath)) {
   }
   if (manifest.share_target) {
     manifest.share_target.action = `${rootPrefix}/share`.replace(/\/{2,}/g, "/");
+  }
+  if (manifest.file_handlers && Array.isArray(manifest.file_handlers)) {
+    for (const fh of manifest.file_handlers) {
+      if (typeof fh.action !== "string") continue;
+      if (fh.action === "/" || fh.action === "") {
+        fh.action = base;
+      } else if (fh.action.startsWith("/") && rootPrefix && !fh.action.startsWith(`${rootPrefix}/`)) {
+        fh.action = `${rootPrefix}${fh.action}`.replace(/\/{2,}/g, "/");
+      }
+    }
   }
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }

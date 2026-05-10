@@ -80,7 +80,7 @@ Open the URL printed by Vite in a supported desktop or mobile browser.
 
 GitHub Pages serves project sites at `https://<user>.github.io/<repository>/`. Assets and the PWA manifest must use that base path.
 
-- **CI**: [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml) sets `VITE_BASE_URL=/<repository-name>/`.
+- **CI**: [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml) sets `VITE_BASE_URL=/<repository-name>/`. If that variable is ever omitted, **`GITHUB_REPOSITORY`** (always present in Actions) is used to infer the same path in `vite.config.js` and in [`scripts/gh-pages-postbuild.mjs`](scripts/gh-pages-postbuild.mjs).
 - **Local verification** (replace `Silo` if your fork uses another name):
 
 ```bash
@@ -101,6 +101,13 @@ Then open `http://localhost:<port>/Silo/` (the CLI prints the port).
 3. Push to `main` or run **Actions → Deploy to GitHub Pages → Run workflow**.
 
 After a successful run, the published URL appears in the workflow summary and under **Settings → Pages**.
+
+### Site loads as a blank (often black) page
+
+Almost always the browser failed to load the JavaScript bundle. Open **Developer Tools → Network**, reload, and check the main `index-*.js` request.
+
+- **404 on `/assets/...`** while the site URL is `https://<user>.github.io/<repo>/`: the build used root base path `/` instead of `/<repo>/`. Fix: use the **Deploy to GitHub Pages** workflow (it sets `VITE_BASE_URL`), or build with `VITE_BASE_URL=/<repository-name>/ npm run build`. On GitHub Actions, `GITHUB_REPOSITORY` is now used automatically when `VITE_BASE_URL` is omitted.
+- **Pages source is “Deploy from a branch”** with only source files (no `npm run build` output): GitHub is not serving a Vite build; switch **Source** to **GitHub Actions** as above.
 
 ### Deploy fails with `HttpError: Not Found`
 
