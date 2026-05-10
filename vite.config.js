@@ -2,9 +2,16 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
-/** GitHub Project Pages: https://<user>.github.io/<repo>/ — set VITE_BASE_URL in CI */
+/**
+ * GitHub Project Pages: https://<user>.github.io/<repo>/ — assets must live under /repo/.
+ * Prefer explicit VITE_BASE_URL in CI; if unset, infer from GITHUB_REPOSITORY (always set on GitHub Actions).
+ */
 function viteBase() {
-  const raw = process.env.VITE_BASE_URL;
+  let raw = process.env.VITE_BASE_URL;
+  if ((raw == null || raw === "") && process.env.GITHUB_REPOSITORY) {
+    const name = process.env.GITHUB_REPOSITORY.split("/")[1];
+    if (name) raw = `/${name}/`;
+  }
   if (raw == null || raw === "") return "/";
   let b = String(raw);
   if (!b.startsWith("/")) b = `/${b}`;
