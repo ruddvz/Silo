@@ -495,7 +495,8 @@ function ContextMenu({ doc, onAction, onClose }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function Silo() {
+/** @param {{ onOpenLists?: () => void }} props */
+export default function Silo({ onOpenLists }) {
   const [activeTag,     setActiveTag]     = useState("All");
   const [query,         setQuery]         = useState("");
   const [docs,          setDocs]          = useState(() => SEED_DOCS.map((d) => ({ ...d, kind: d.kind || "pdf" })));
@@ -1589,6 +1590,15 @@ export default function Silo() {
   }, [opfsReady, processAllPendingShares, refreshShareQueueCount, showToast]);
 
   const settingsActions = useMemo(() => [
+    {
+      id: "lists",
+      label: "Open Silo Lists (shared checklists)",
+      icon: "☰",
+      onSelect: () => {
+        onOpenLists?.();
+        setSettingsOpen(false);
+      },
+    },
     { id: "export", label: "Export backup (.zip)", icon: "↑", onSelect: () => { void handleExportVaultZip(); } },
     { id: "import", label: "Import / merge backup", icon: "↓", onSelect: () => { backupImportRef.current?.click(); } },
     {
@@ -1707,6 +1717,7 @@ export default function Silo() {
       onSelect: () => setPrivacyOpen(true),
     },
   ], [
+    onOpenLists,
     handleExportVaultZip,
     handleImportFolderFromDisk,
     handleCheckVaultIntegrity,
