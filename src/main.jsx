@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
-import Silo from "./Silo.jsx";
+import App from "./App.jsx";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -14,6 +14,6 @@ if ("serviceWorker" in navigator) {
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <Silo />
+    <App />
   </StrictMode>
 );
