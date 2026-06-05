@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useReducedMotion } from "../design/motion.js";
+import { APP_ICON_SRC } from "../lib/vaultConstants.js";
 
 /**
  * @param {{
@@ -21,13 +22,10 @@ export function UnlockScreen({ onUnlock, onSkip, error }) {
       animate={{ opacity: 1 }}
     >
       <div className="unlock-card">
-        <div className="unlock-icon" aria-hidden>
-          🔐
-        </div>
-        <h1 className="unlock-title">Unlock vault</h1>
+        <img src={APP_ICON_SRC} alt="" width={64} height={64} className="unlock-logo" />
+        <h1 className="unlock-title">Locked vault</h1>
         <p className="unlock-body">
-          Your vault index can be passphrase-protected. Enter your passphrase so Silo can decrypt text for search and
-          previews.
+          Enter your passphrase to unlock indexed text for search and previews. Original files stay on this device.
         </p>
 
         <div className="unlock-field">
@@ -46,7 +44,7 @@ export function UnlockScreen({ onUnlock, onSkip, error }) {
             onClick={() => setShow((s) => !s)}
             aria-label={show ? "Hide passphrase" : "Show passphrase"}
           >
-            {show ? "🙈" : "👁"}
+            {show ? "Hide" : "Show"}
           </button>
         </div>
 
@@ -63,7 +61,7 @@ export function UnlockScreen({ onUnlock, onSkip, error }) {
 
         <div className="unlock-actions">
           <button type="button" className="btn btn--accent" onClick={() => onUnlock(passphrase)}>
-            Unlock
+            Unlock vault
           </button>
           {onSkip && (
             <button type="button" className="btn btn--ghost" onClick={onSkip}>
@@ -71,6 +69,10 @@ export function UnlockScreen({ onUnlock, onSkip, error }) {
             </button>
           )}
         </div>
+
+        <p className="unlock-recovery">
+          Forgot passphrase? You may need to reset protected index data. Originals may still be available depending on your vault settings.
+        </p>
       </div>
     </motion.div>
   );

@@ -70,8 +70,8 @@ export function IngestDialog({
             }}
           >
             <div className="ingest-dialog__handle" />
-            <h2 className="ingest-dialog__title">Add to vault</h2>
-            <p className="ingest-dialog__subtitle">Files stay on this device.</p>
+            <h2 className="ingest-dialog__title">Add to Silo</h2>
+            <p className="ingest-dialog__subtitle">Save something privately on this device.</p>
 
             <p className="ingest-dialog__section-label">Copy into vault</p>
             <div className="ingest-dialog__options">

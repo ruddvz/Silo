@@ -1,0 +1,31 @@
+/* Focus, reduced motion, touch targets */
+
+:focus-visible {
+  outline: 2px solid var(--silo-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+.ui-button,
+.silo-tab,
+.quick-capture__btn,
+.doc-card,
+.ingest-option {
+  touch-action: manipulation;
+}
+
+input,
+textarea,
+select {
+  font-size: max(16px, var(--text-body));
+}

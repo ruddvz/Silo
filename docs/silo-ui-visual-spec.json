@@ -1,0 +1,19 @@
+{
+  "product": "Silo",
+  "platformTarget": "iOS PWA first",
+  "visualLanguage": {
+    "name": "Silo OS",
+    "tone": ["private", "calm", "premium", "local-first", "fast"]
+  },
+  "colors": {
+    "background": "#090B0F",
+    "accent": "#D6A84F",
+    "text": "#F6F4EF"
+  },
+  "mobileShell": {
+    "topBar": { "safeAreaAware": true },
+    "bottomNav": {
+      "tabs": ["Home", "Search", "Capture", "Vault", "Settings"]
+    }
+  }
+}

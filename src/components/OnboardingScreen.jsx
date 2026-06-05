@@ -3,24 +3,29 @@ import { motion, AnimatePresence } from "framer-motion";
 
 const STEPS = [
   {
-    title: "A private vault for everything you send yourself",
-    body: "Save documents, screenshots, voice memos, and notes in seconds — organized on your device.",
-    icon: "🗄",
+    title: "Your private drop zone",
+    body: "Save the documents, screenshots, notes, and voice memos you usually send yourself.",
+    step: "welcome",
   },
   {
-    title: "Local-first by default",
-    body: "Files stay on this device unless you export a backup or enable optional sharing. Nothing is uploaded to Silo servers.",
-    icon: "📱",
+    title: "Stored on this device by default",
+    body: "Silo keeps your vault in browser storage when supported. Files are not uploaded to Silo servers unless you enable optional sharing.",
+    step: "local",
   },
   {
-    title: "Back up regularly",
-    body: "Browser storage can be cleared by the system or browser. Export a ZIP backup from Settings to keep your vault safe.",
-    icon: "💾",
+    title: "Backups matter",
+    body: "Browser storage can be cleared by your device or browser. Export a backup regularly so your vault is recoverable.",
+    step: "backup",
   },
   {
-    title: "Ready when you are",
-    body: "Add your first file, photo, note, or voice memo. You can search everything later — even text inside PDFs and images.",
-    icon: "✓",
+    title: "Lock indexed text (optional)",
+    body: "A passphrase can protect searchable extracted text. Keep it safe — forgotten passphrases cannot be recovered.",
+    step: "passphrase",
+  },
+  {
+    title: "Drop in your first item",
+    body: "Add a file, photo, note, or voice memo. You can search everything later — even text inside PDFs and images.",
+    step: "ready",
   },
 ];
 
@@ -54,7 +59,9 @@ export function OnboardingScreen({ onComplete, onAddFirst, storageLimited = fals
             transition={{ duration: 0.2 }}
             className="onboarding__step"
           >
-            <div className="onboarding__icon" aria-hidden="true">{current.icon}</div>
+            <div className="onboarding__icon onboarding__icon--mark" aria-hidden="true">
+              {step === 0 ? "S" : step + 1}
+            </div>
             <h2 id="onboarding-title" className="onboarding__title">{current.title}</h2>
             <p className="onboarding__body">{current.body}</p>
           </motion.div>

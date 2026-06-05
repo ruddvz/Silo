@@ -1,28 +1,14 @@
 import { motion } from "framer-motion";
 import { STAGGER_ITEM, useReducedMotion } from "../design/motion.js";
 import { highlightQuery } from "../lib/highlightQuery.js";
-
-const TYPE_ICONS = {
-  pdf: "📄",
-  image: "🖼",
-  audio: "🎙",
-  text: "📝",
-  note: "📝",
-  file: "📁",
-};
-
-const TYPE_LABELS = {
-  pdf: "PDF",
-  image: "Image",
-  audio: "Voice",
-  text: "Note",
-  note: "Note",
-  file: "File",
-};
+import { FileTypeIcon } from "./ui/FileTypeIcon.jsx";
+import { FILE_TYPE_LABELS } from "../lib/fileTypeLabels.js";
+import { StatusPill } from "./ui/StatusPill.jsx";
+import { IconLink } from "./ui/icons.jsx";
 
 /**
  * @param {{
- *   doc: { id: string|number, name: string, kind?: string, date?: string, size?: string, storage?: string, tag?: string },
+ *   doc: { id: string|number, name: string, kind?: string, date?: string, size?: string, storage?: string, tag?: string, extractionStatus?: string },
  *   isSelected?: boolean,
  *   onActivate: (doc: object) => void,
  *   query?: string,
@@ -34,6 +20,12 @@ const TYPE_LABELS = {
 export function DocumentCard({ doc, isSelected, onActivate, query = "", snippet, matchReason, onKeyNav }) {
   const k = doc.kind || "pdf";
   const reduced = useReducedMotion();
+  const status =
+    doc.extractionStatus === "error"
+      ? { label: "Needs repair", variant: "warning" }
+      : doc.storage === "linked"
+        ? { label: "Linked", variant: "info" }
+        : { label: "Indexed", variant: "success" };
 
   return (
     <motion.article
@@ -44,6 +36,7 @@ export function DocumentCard({ doc, isSelected, onActivate, query = "", snippet,
       whileTap={reduced ? {} : { scale: 0.995 }}
       role="option"
       tabIndex={0}
+      onClick={() => onActivate(doc)}
       onKeyDown={(e) => {
         onKeyNav?.(doc, e);
         if (e.key === "Enter" || e.key === " ") {
@@ -59,9 +52,9 @@ export function DocumentCard({ doc, isSelected, onActivate, query = "", snippet,
       <div className="doc-card__body">
         <div className="doc-card__header">
           <span className="doc-card__icon" aria-hidden>
-            {TYPE_ICONS[k] ?? TYPE_ICONS.file}
+            <FileTypeIcon kind={k} size={18} />
           </span>
-          <span className="doc-card__type-label">{TYPE_LABELS[k] ?? TYPE_LABELS.file}</span>
+          <span className="doc-card__type-label">{FILE_TYPE_LABELS[k] ?? FILE_TYPE_LABELS.file}</span>
           <span className="doc-card__date">{doc.date}</span>
         </div>
 
@@ -78,16 +71,15 @@ export function DocumentCard({ doc, isSelected, onActivate, query = "", snippet,
           <p className="doc-card__match-reason">{matchReason}</p>
         )}
 
-        {doc.tag && (
-          <div className="doc-card__cats">
-            <span className="doc-card__tag-pill">{doc.tag}</span>
-          </div>
-        )}
+        <div className="doc-card__footer">
+          {doc.tag && <span className="doc-card__tag-pill">{doc.tag}</span>}
+          <StatusPill variant={status.variant}>{status.label}</StatusPill>
+        </div>
       </div>
 
       {doc.storage === "linked" && k !== "text" && (
         <div className="doc-card__badge doc-card__badge--linked" title="Linked from disk">
-          🔗
+          <IconLink size={14} />
         </div>
       )}
     </motion.article>

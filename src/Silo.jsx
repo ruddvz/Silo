@@ -29,8 +29,6 @@ import { repairVaultEntry } from "./vault/repair.js";
 import { VaultRecoveryScreen } from "./components/VaultRecoveryScreen.jsx";
 import { summarizeExtractive } from "./vault/summarize.js";
 import { SearchBar } from "./components/SearchBar.jsx";
-import { DocumentList } from "./components/DocumentList.jsx";
-import { EmptyState } from "./components/EmptyState.jsx";
 import { IngestProgress } from "./components/IngestProgress.jsx";
 import { BottomNav } from "./components/BottomNav.jsx";
 import { Sidebar } from "./components/Sidebar.jsx";
@@ -38,10 +36,10 @@ import { ShareQueue } from "./components/ShareQueue.jsx";
 import { InstallBanner } from "./components/InstallBanner.jsx";
 import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
 import { Banner } from "./components/Banner.jsx";
-import { VaultSkeletonList } from "./components/VaultSkeletonList.jsx";
 import { IngestDialog } from "./components/IngestDialog.jsx";
 import { PreviewPanel } from "./components/PreviewPanel.jsx";
 import { SettingsDrawer } from "./components/SettingsDrawer.jsx";
+import { SettingsGroup } from "./components/ui/SettingsGroup.jsx";
 import { UnlockScreen } from "./components/UnlockScreen.jsx";
 import { PrivacyModal } from "./components/PrivacyModal.jsx";
 import { Toast } from "./components/Toast.jsx";
@@ -57,7 +55,7 @@ import { useShareQueue } from "./hooks/useShareQueue.js";
 import { APP_ICON_SRC, DEFAULT_VAULT_FILE_ACCEPT, VAULT_FILE_ACCEPT_BY_KIND } from "./lib/vaultConstants.js";
 import { formatBytes, formatRelativeDate, parseMB } from "./lib/vaultFormat.js";
 import { ALL_TAGS, inferTagGuess, inferTagForNote } from "./lib/vaultTags.js";
-import { mergeDocs, buildCombinedIndexText, SMART_VIEWS, supportsDirectoryPicker } from "./lib/vaultDocs.js";
+import { mergeDocs, buildCombinedIndexText, supportsDirectoryPicker } from "./lib/vaultDocs.js";
 import {
   SEED_DOCS,
   DEMO_INDEX_BOOST,
@@ -69,6 +67,9 @@ import {
 import { hasCompletedOnboarding, markOnboardingComplete } from "./lib/onboarding.js";
 import { OnboardingScreen } from "./components/OnboardingScreen.jsx";
 import { HomeScreen } from "./components/HomeScreen.jsx";
+import { SearchScreen } from "./screens/SearchScreen.jsx";
+import { VaultScreen } from "./screens/VaultScreen.jsx";
+import { SiloTopBar } from "./components/shell/SiloTopBar.jsx";
 import { BackupRestorePanel } from "./components/BackupRestorePanel.jsx";
 import { PassphraseModal } from "./components/PassphraseModal.jsx";
 import { TranscriptionFallbackModal } from "./components/TranscriptionFallbackModal.jsx";
@@ -110,6 +111,7 @@ export default function Silo({ onOpenLists }) {
   const [ptrBar, setPtrBar] = useState(0);
   const backupImportRef = useRef(null);
   const [mobileTab, setMobileTab] = useState("home");
+  const [searchFilter, setSearchFilter] = useState("All");
   const [ingestStage, setIngestStage] = useState(/** @type {string | null} */ (null));
   const [ingestOverlayName, setIngestOverlayName] = useState(/** @type {string | null} */ (null));
   const [confirmMergeOpen, setConfirmMergeOpen] = useState(false);
@@ -444,7 +446,19 @@ export default function Silo({ onOpenLists }) {
   );
 
   const showHomePanel = mobileTab === "home";
-  const showVaultPanel = mobileTab !== "home";
+  const showSearchPanel = mobileTab === "search";
+  const showVaultPanel = mobileTab === "vault";
+
+  const vaultMeta = useMemo(() => {
+    const count = docs.filter((d) => d.source === "local").length;
+    const backup = lastBackupExport ? `last backup ${lastBackupExport}` : "no backup yet";
+    return `${count} items · ${backup}`;
+  }, [docs, lastBackupExport]);
+
+  const backupRecommended = useMemo(() => {
+    const hasLocal = docs.some((d) => d.source === "local");
+    return hasLocal && !lastBackupExport;
+  }, [docs, lastBackupExport]);
 
   const totalGB = useMemo(() => {
     let mb = 0;
@@ -1507,7 +1521,7 @@ export default function Silo({ onOpenLists }) {
   }, [docs, previewDoc]);
 
   return (
-    <div className="app-shell">
+    <div className="app-shell silo-app-shell">
       {vaultUnlockGate && opfsReady && (
         <UnlockScreen onUnlock={handleVaultUnlock} onSkip={handleVaultUnlockSkip} error={unlockError} />
       )}
@@ -1614,8 +1628,16 @@ export default function Silo({ onOpenLists }) {
         />
       </div>
 
+      <SiloTopBar
+        subtitle={vaultStatusLabel}
+        onSettings={() => {
+          setSettingsOpen(true);
+          bumpMeaningfulInteraction();
+        }}
+      />
+
       <div className="app-shell__main">
-        <div ref={mainInnerRef} className="app-shell__main-inner">
+        <div ref={mainInnerRef} className="app-shell__main-inner has-mobile-shell">
           <div
             className="vault-ptr-indicator"
             style={{ transform: `scaleX(${ptrBar})`, opacity: ptrBar > 0 ? 1 : 0 }}
@@ -1643,6 +1665,10 @@ export default function Silo({ onOpenLists }) {
             <div style={{ padding: "0 var(--space-6)", fontSize: "var(--text-xs)", color: "var(--color-warning)", marginBottom: "var(--space-2)" }}>
               {shareQueueFailedCount} share import(s) failed — retry from the queue or Settings.
             </div>
+          )}
+
+          {ingestError && (
+            <Banner variant="warning">{ingestError}</Banner>
           )}
 
           <div className="vault-topbar">
@@ -1696,6 +1722,8 @@ export default function Silo({ onOpenLists }) {
               docs={docs}
               contentById={contentById}
               vaultStatusLabel={vaultStatusLabel}
+              vaultMeta={vaultMeta}
+              backupRecommended={backupRecommended}
               needsAttention={needsAttention}
               ingestBusy={ingestBusy}
               onAddFile={() => handlePickVaultFiles("any")}
@@ -1704,126 +1732,59 @@ export default function Silo({ onOpenLists }) {
               onAddVoice={() => handlePickVaultFiles("audio")}
               onOpenDoc={(d) => { void handleOpenDoc(d); }}
               onViewAll={() => setMobileTab("vault")}
+              onSearch={() => setMobileTab("search")}
+              onBackup={() => {
+                setSettingsOpen(true);
+                void handleExportVaultZip();
+              }}
+              onOpenLists={onOpenLists}
+              onCollection={(name) => {
+                setActiveTag(name);
+                setMobileTab("vault");
+              }}
+            />
+          </div>
+
+          <div className={`search-screen-view ${showSearchPanel ? "search-screen-view--active" : ""}`}>
+            <SearchScreen
+              query={query}
+              onQueryChange={handleQueryChange}
+              onSearchBlur={handleSearchBlur}
+              display={display}
+              contentById={contentById}
+              vaultListLoading={vaultListLoading}
+              embeddingSearchBusy={embeddingSearchBusy}
+              semanticSearchEnabled={semanticSearchEnabled}
+              embeddingModelReady={embeddingModelReady}
+              searchFilter={searchFilter}
+              onSearchFilter={setSearchFilter}
+              onDocOpen={handlePointerUp}
+              onPointerDown={handlePointerDown}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerCancel}
+              onSwipeDelete={(d) => setConfirmDeleteDoc(d)}
+              onCardKeyDown={handleCardKeyDown}
             />
           </div>
 
           <div className={`vault-main-view ${showVaultPanel ? "vault-main-view--active" : ""}`}>
-          <div style={{ padding: "0 var(--space-6)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, marginTop: 14 }}>
-            <motion.h1
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="vault-hero-title"
-            >
-              Your vault
-            </motion.h1>
-            <div className="add-menu-wrap">
-            <input
-              ref={backupImportRef}
-              type="file"
-              accept=".zip,application/zip"
-              style={{ display: "none" }}
-              aria-hidden="true"
-              onChange={(e) => { handleRequestMergeBackup(e.target.files); }}
-            />
-            <input
-              ref={vaultFileInputRef}
-              type="file"
-              accept={DEFAULT_VAULT_FILE_ACCEPT}
-              style={{ display: "none" }}
-              aria-hidden="true"
-              onChange={(e) => { void handleVaultFiles(e.target.files); }}
-            />
-            <button
-              type="button"
-              className="add-menu-trigger"
-              disabled={ingestBusy}
-              aria-haspopup="dialog"
-              aria-expanded={ingestDialogOpen}
-              onClick={() => {
-                setIngestDialogOpen(true);
-                bumpMeaningfulInteraction();
-              }}
-            >
-              {ingestBusy ? "Saving…" : "Add"}
-              <span style={{ fontSize: 10, color: "#848480", marginLeft: 2 }} aria-hidden>+</span>
-            </button>
-          </div>
-        </div>
-
-      {ingestError && (
-        <div style={{ padding: "0 var(--space-6) var(--space-3)", fontSize: "var(--text-xs)", color: "var(--color-danger)" }}>
-          {ingestError}
-        </div>
-      )}
-
-      <div className="vault-filters-row vault-filters-row--mobile-only">
-        <label className="vault-select-label">
-          <span>View</span>
-          <select
-            className="vault-select"
-            aria-label="Smart view"
-            value={smartView}
-            onChange={(e) => {
-              const v = e.target.value;
-              setSmartView(v);
-              if (v) setActiveTag("All");
+          <VaultScreen
+            itemCount={docs.length}
+            totalGB={totalGB}
+            tags={ALL_TAGS}
+            activeTag={activeTag}
+            onTag={(t) => {
+              setActiveTag(t);
               bumpMeaningfulInteraction();
             }}
-          >
-            <option value="">All items</option>
-            {SMART_VIEWS.map((sv) => (
-              <option key={sv.id} value={sv.id}>{sv.label}</option>
-            ))}
-          </select>
-        </label>
-        <label className="vault-select-label">
-          <span>Category</span>
-          <select
-            className="vault-select"
-            aria-label="Filter by category"
-            value={activeTag}
-            onChange={(e) => {
-              setActiveTag(e.target.value);
-              bumpMeaningfulInteraction();
-            }}
-          >
-            {ALL_TAGS.map((tag) => (
-              <option key={tag} value={tag}>{tag}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <AnimatePresence>
-        {query && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="search-hint-row"
-          >
-            {semanticSearchEnabled
-              ? `Hybrid search (keywords + on-device meaning) for "${query}"`
-              : `Keyword search for "${query}"`}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <div style={{ marginTop: "var(--space-6)" }} role="listbox" aria-label="Documents" aria-busy={vaultListLoading}>
-        {vaultListLoading ? (
-          <VaultSkeletonList rows={8} />
-        ) : !hasResults ? (
-          <EmptyState
-            variant={emptyVariant}
-            onAction={(action) => {
-              if (action === "ingest" || action === "ingest-audio") setIngestDialogOpen(true);
-            }}
-          />
-        ) : (
-          <DocumentList
             display={display}
             query={query}
             contentById={contentById}
+            hasResults={hasResults}
+            vaultListLoading={vaultListLoading}
+            emptyVariant={emptyVariant}
+            ingestBusy={ingestBusy}
+            onOpenCapture={() => setIngestDialogOpen(true)}
             onDocOpen={handlePointerUp}
             onPointerDown={handlePointerDown}
             onPointerUp={handlePointerUp}
@@ -1831,10 +1792,23 @@ export default function Silo({ onOpenLists }) {
             onSwipeDelete={(d) => setConfirmDeleteDoc(d)}
             onCardKeyDown={handleCardKeyDown}
           />
-        )}
-      </div>
+          <input
+            ref={backupImportRef}
+            type="file"
+            accept=".zip,application/zip"
+            style={{ display: "none" }}
+            aria-hidden="true"
+            onChange={(e) => { handleRequestMergeBackup(e.target.files); }}
+          />
+          <input
+            ref={vaultFileInputRef}
+            type="file"
+            accept={DEFAULT_VAULT_FILE_ACCEPT}
+            style={{ display: "none" }}
+            aria-hidden="true"
+            onChange={(e) => { void handleVaultFiles(e.target.files); }}
+          />
           </div>
-        </div>
 
         <div className="search-dock">
           <SearchBar
@@ -1848,6 +1822,7 @@ export default function Silo({ onOpenLists }) {
             onBlur={handleSearchBlur}
           />
         </div>
+      </div>
       </div>
 
       <div className="app-shell__preview">
@@ -1906,52 +1881,60 @@ export default function Silo({ onOpenLists }) {
       <AnimatePresence>
         {settingsOpen && (
           <SettingsDrawer onClose={() => setSettingsOpen(false)} actions={settingsActions}>
-            <BackupRestorePanel
-              itemCount={docs.filter((d) => d.source === "local").length}
-              vaultSizeBytes={vaultSizeBytes}
-              lastBackupHint={lastBackupExport || undefined}
-              busy={ingestBusy}
-              onExport={() => { void handleExportVaultZip(); }}
-              onImport={() => { backupImportRef.current?.click(); }}
-              onCheckHealth={() => { void handleCheckVaultIntegrity(); }}
-            />
             <div className="settings-extras">
+              <SettingsGroup title="Backup & restore">
+                <BackupRestorePanel
+                  itemCount={docs.filter((d) => d.source === "local").length}
+                  vaultSizeBytes={vaultSizeBytes}
+                  lastBackupHint={lastBackupExport || undefined}
+                  busy={ingestBusy}
+                  onExport={() => { void handleExportVaultZip(); }}
+                  onImport={() => { backupImportRef.current?.click(); }}
+                  onCheckHealth={() => { void handleCheckVaultIntegrity(); }}
+                />
+              </SettingsGroup>
               {storageStats && (
-                <p className="settings-meta">
-                  Storage (this origin): {(storageStats.usage / (1024 * 1024)).toFixed(1)} MB used
-                  {storageStats.quota ? ` of ${(storageStats.quota / (1024 * 1024)).toFixed(0)} MB quota` : ""}.
-                </p>
+                <SettingsGroup title="Storage">
+                  <p className="settings-meta">
+                    {(storageStats.usage / (1024 * 1024)).toFixed(1)} MB used on this device
+                    {storageStats.quota ? ` of ${(storageStats.quota / (1024 * 1024)).toFixed(0)} MB quota` : ""}.
+                  </p>
+                </SettingsGroup>
               )}
-              <label className="settings-field">
-                <span>Theme</span>
-                <select
-                  className="vault-select"
-                  value={theme}
-                  onChange={(e) => setTheme(e.target.value)}
-                  aria-label="Color theme"
-                >
-                  <option value="system">System</option>
-                  <option value="dark">Dark</option>
-                  <option value="light">Light</option>
-                </select>
-              </label>
-              <label className="settings-field">
-                <span>Density</span>
-                <select
-                  className="vault-select"
-                  value={density}
-                  onChange={(e) => setDensity(e.target.value)}
-                  aria-label="List density"
-                >
-                  <option value="comfortable">Comfortable</option>
-                  <option value="compact">Compact</option>
-                </select>
-              </label>
-              <p className="settings-meta">
-                <a href={`${import.meta.env.BASE_URL}native/README.md`.replace(/\/{2,}/g, "/")} target="_blank" rel="noopener noreferrer">
-                  Android TWA / native packaging guide
-                </a>
-              </p>
+              <SettingsGroup title="Appearance">
+                <label className="settings-field">
+                  <span>Theme</span>
+                  <select
+                    className="vault-select"
+                    value={theme}
+                    onChange={(e) => setTheme(e.target.value)}
+                    aria-label="Color theme"
+                  >
+                    <option value="system">System</option>
+                    <option value="dark">Dark</option>
+                    <option value="light">Light</option>
+                  </select>
+                </label>
+                <label className="settings-field">
+                  <span>Density</span>
+                  <select
+                    className="vault-select"
+                    value={density}
+                    onChange={(e) => setDensity(e.target.value)}
+                    aria-label="List density"
+                  >
+                    <option value="comfortable">Comfortable</option>
+                    <option value="compact">Compact</option>
+                  </select>
+                </label>
+              </SettingsGroup>
+              <SettingsGroup title="About">
+                <p className="settings-meta">
+                  <a href={`${import.meta.env.BASE_URL}native/README.md`.replace(/\/{2,}/g, "/")} target="_blank" rel="noopener noreferrer">
+                    Android TWA / native packaging guide
+                  </a>
+                </p>
+              </SettingsGroup>
             </div>
           </SettingsDrawer>
         )}
