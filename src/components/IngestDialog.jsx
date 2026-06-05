@@ -12,9 +12,12 @@ import { SPRING_GENTLE, useReducedMotion } from "../design/motion.js";
  *   onClose: () => void,
  *   ingestBusy: boolean,
  *   nativeLinkReady: boolean,
+ *   linkFromDiskSupported?: boolean,
  *   onPickFiles: (kind: VaultFileKind) => void,
  *   onLinkDisk: () => void,
  *   onNewNote: () => void,
+ *   onPasteClipboard?: () => void,
+ *   onImportBackup?: () => void,
  * }} props
  */
 export function IngestDialog({
@@ -22,9 +25,12 @@ export function IngestDialog({
   onClose,
   ingestBusy,
   nativeLinkReady,
+  linkFromDiskSupported = true,
   onPickFiles,
   onLinkDisk,
   onNewNote,
+  onPasteClipboard,
+  onImportBackup,
 }) {
   const reduced = useReducedMotion();
   const [isWide, setIsWide] = useState(false);
@@ -94,8 +100,8 @@ export function IngestDialog({
                   🖼
                 </span>
                 <span className="ingest-option__text">
-                  <span className="ingest-option__label">Image</span>
-                  <span className="ingest-option__hint">OCR for screenshots & photos</span>
+                  <span className="ingest-option__label">Photo / screenshot</span>
+                  <span className="ingest-option__hint">Camera or library · HEIC stored safely</span>
                 </span>
               </button>
 
@@ -132,11 +138,48 @@ export function IngestDialog({
 
             <p className="ingest-dialog__section-label">More</p>
             <div className="ingest-dialog__options ingest-dialog__options--compact">
+              {onPasteClipboard && (
+                <button
+                  type="button"
+                  className="ingest-option"
+                  disabled={ingestBusy}
+                  onClick={() => {
+                    onPasteClipboard();
+                    onClose();
+                  }}
+                >
+                  <span className="ingest-option__icon" aria-hidden>📋</span>
+                  <span className="ingest-option__text">
+                    <span className="ingest-option__label">Paste from clipboard</span>
+                    <span className="ingest-option__hint">Save as text note</span>
+                  </span>
+                </button>
+              )}
+
+              {onImportBackup && (
+                <button
+                  type="button"
+                  className="ingest-option"
+                  disabled={ingestBusy}
+                  onClick={() => {
+                    onImportBackup();
+                    onClose();
+                  }}
+                >
+                  <span className="ingest-option__icon" aria-hidden>📦</span>
+                  <span className="ingest-option__text">
+                    <span className="ingest-option__label">Import backup</span>
+                    <span className="ingest-option__hint">Merge a Silo export .zip</span>
+                  </span>
+                </button>
+              )}
+
+              {linkFromDiskSupported && (
               <button
                 type="button"
                 className="ingest-option"
                 disabled={ingestBusy || !nativeLinkReady}
-                title={nativeLinkReady ? "Keep original on disk (Chromium)" : "Requires Chrome, Edge, or Brave desktop"}
+                title={nativeLinkReady ? "Keep original on disk (Chromium)" : "Not available on this device"}
                 onClick={() => {
                   onLinkDisk();
                   onClose();
@@ -150,6 +193,7 @@ export function IngestDialog({
                   <span className="ingest-option__hint">Chromium desktop only</span>
                 </span>
               </button>
+              )}
 
               <button
                 type="button"

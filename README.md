@@ -18,12 +18,14 @@ Silo suits anyone who wants a **personal archive** of documents and snippets **w
 
 | Domain | Capabilities |
 |--------|----------------|
-| **Storage** | OPFS-backed vault on supported browsers; seeded demo content when OPFS is unavailable |
-| **Ingest** | PDF text extraction, image OCR, audio transcription, plain notes; optional **link from disk** (File System Access API on Chromium) |
-| **Search** | Full-text index ([Orama](https://oramajs.org/)) plus **hybrid semantic** search with embeddings computed locally |
+| **Storage** | OPFS-backed vault on supported browsers; empty vault in production (demo gated by env) |
+| **Mobile shell** | Capture-first home screen, bottom nav (Home / Search / Capture / Vault / Settings) |
+| **Ingest** | PDF text extraction, image OCR, audio transcription, plain notes, clipboard paste; optional **link from disk** (Chromium); HEIC guidance on iOS |
+| **Search** | Full-text index ([Orama](https://oramajs.org/)) plus optional **hybrid semantic** search with on-device embeddings; “why matched” hints |
 | **Organization** | Categories (tags), smart views (e.g. recent, voice, screenshots), filters |
-| **Trust & recovery** | Optional vault passphrase for index text, integrity checks, repair tools, **ZIP** export/import for backups |
-| **Installable web app** | Web app manifest, service worker, and share-target flow for importing shared content into a queue |
+| **Trust & recovery** | Vault migrations with pre-run snapshots, health checks, repair tools, **ZIP** export/import with validation and pre-import snapshots |
+| **Installable web app** | Web app manifest, service worker with update banner, share-target import queue, iOS safe-area layout |
+| **Shared lists** | Optional Silo Lists module (`/#lists`) — separate from vault; syncs via Supabase when configured, local-only otherwise |
 
 Packaging notes for **Android TWA**, **Capacitor**, and related setups live in [`public/native/README.md`](public/native/README.md) and [`public/native/TWA.md`](public/native/TWA.md).
 
@@ -71,10 +73,26 @@ Open the URL printed by Vite in a supported desktop or mobile browser.
 | `npm run build` | Production build plus GitHub Pages post-processing ([`scripts/gh-pages-postbuild.mjs`](scripts/gh-pages-postbuild.mjs)) |
 | `npm run preview` | Serve the production build locally |
 | `npm run lint` | Run ESLint |
+| `npm run test` | Run Vitest unit tests (vault migrations, backup validation, file types) |
+| `npm run analyze` | Production build with chunk size summary |
+| `npm run a11y` | Preview build and run axe accessibility scan (requires build first) |
 
 ---
 
 ## Configuration
+
+### Demo data (development only)
+
+Production builds start with an **empty vault**. To seed demo documents locally:
+
+```bash
+# .env.local
+VITE_ENABLE_DEMO_DATA=true
+```
+
+### Silo Lists (optional)
+
+Shared checklists live at `/#lists`. Without Supabase credentials the module runs in **local mode** on this device. See [`docs/SILO_LISTS.md`](docs/SILO_LISTS.md).
 
 ### Base URL (GitHub Pages project sites)
 
@@ -123,11 +141,16 @@ The **build** job can succeed while **deploy** fails until that setting is corre
 ## Repository layout
 
 ```
+├── docs/                Agent progress, privacy, recovery, release checklist, iOS PWA plan
 ├── public/              Static assets, manifest, service worker, native/TWA docs
 ├── scripts/             Build helpers (e.g. GitHub Pages manifest / SPA fallback)
 ├── src/
-│   ├── vault/           OPFS, crypto, search, OCR, transcription, backup, …
-│   ├── Silo.jsx         Main application UI
+│   ├── components/      UI modules (home screen, backup panel, modals, …)
+│   ├── hooks/           React hooks (search, PWA lifecycle, …)
+│   ├── lib/             Shared helpers (vault tags, file types, search explain, …)
+│   ├── lists/           Optional Silo Lists app (Supabase or local mode)
+│   ├── vault/           OPFS, crypto, search, OCR, transcription, backup, migrations
+│   ├── Silo.jsx         Main vault application UI
 │   ├── main.jsx
 │   └── index.css
 ├── index.html
@@ -142,6 +165,8 @@ The **build** job can succeed while **deploy** fails until that setting is corre
 - **Local-first**: Vault blobs and the manifest live in OPFS when the browser allows it; OCR, transcription, and embedding work run in the page.
 - **Optional passphrase**: Can protect indexed text at rest. Use a strong passphrase and keep backups—losing it can make encrypted index content unrecoverable.
 - **Linked files**: “Link from disk” keeps indexing metadata and text while reading originals from disk when the browser permits.
+- **Backups**: Export ZIP backups regularly; import validates archives and saves a manifest snapshot before merge.
+- **Silo Lists**: Checklist sync is separate from the vault. Vault documents are never uploaded to Lists. See [`docs/privacy-security.md`](docs/privacy-security.md) and [`docs/data-recovery.md`](docs/data-recovery.md).
 
 Treat `src/vault/` and your browser’s permission model as part of your threat assessment before storing highly sensitive material.
 
@@ -149,7 +174,7 @@ Treat `src/vault/` and your browser’s permission model as part of your threat 
 
 ## Contributing
 
-Issues and pull requests are welcome. For application changes, please run `npm run lint` and `npm run build` before submitting.
+Issues and pull requests are welcome. For application changes, please run `npm run lint`, `npm run test`, and `npm run build` before submitting.
 
 ---
 

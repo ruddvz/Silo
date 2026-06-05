@@ -1,13 +1,17 @@
 import { motion } from "framer-motion";
 import { useEffect, useRef } from "react";
 
-const BODY = `Silo runs entirely in your browser. Your documents, extracted text, and search index stay on your device (Origin Private File System where supported).
+const BODY = `Silo stores your vault on this device by default. Your files are not uploaded to Silo servers.
 
-We do not operate a Silo server for your vault data and do not send your file contents or index text to our servers. Optional features (such as loading open-source AI models for embeddings) may fetch assets from third-party CDNs you configure in the browser; that traffic goes directly from your browser to those hosts, not through Silo.
+What stays local: original files (OPFS), extracted text, search index, and optional semantic embeddings — all computed in your browser.
 
-This build does not include hidden telemetry. If you install Silo as a PWA, your browser may apply its own update and crash-reporting policies.
+Optional passphrase: encrypts indexed/extracted text at rest. It does not encrypt original file blobs unless you use full-blob encryption (planned). If you forget the passphrase, encrypted text cannot be recovered.
 
-You can export your vault as a ZIP backup at any time from Settings.`;
+Shared lists (optional): if you enable Supabase in Settings → Lists, only shared checklist data goes to your connected Supabase project — not your private vault files.
+
+Browser storage can be cleared by the browser or device. Export ZIP backups regularly from Settings.
+
+Third-party CDNs: enabling semantic search or OCR may download open-source models directly to your browser from public model hosts.`;
 
 /**
  * @param {{ onClose: () => void }} props

@@ -4,7 +4,9 @@ import {
   persistVaultBlob,
   persistExtractedText,
   mergeManifestDeviceWins,
+  loadManifest,
 } from "./opfs.js";
+import { loadRawManifest } from "./manifestMeta.js";
 
 /**
  * @param {FileSystemDirectoryHandle} vault
@@ -99,4 +101,45 @@ export function parseVaultZip(zipBytes) {
     }
   }
   return { manifest, files: u };
+}
+
+/**
+ * @param {{ manifest: object | null, files: Record<string, Uint8Array> }} parsed
+ */
+export function validateVaultZip(parsed) {
+  if (!parsed?.manifest) {
+    return { ok: false, error: "Not a Silo backup — manifest.json missing or invalid." };
+  }
+  const entries = parsed.manifest.entries;
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return { ok: false, error: "Backup manifest has no entries." };
+  }
+  const hasBlob = Object.keys(parsed.files || {}).some((k) => k.startsWith("blobs/"));
+  if (!hasBlob) {
+    return { ok: false, error: "Backup contains no file blobs." };
+  }
+  return { ok: true, entryCount: entries.length };
+}
+
+/**
+ * Snapshot manifest before destructive import (rollback reference).
+ * @param {FileSystemDirectoryHandle} vault
+ */
+export async function createPreImportSnapshot(vault) {
+  const raw = await loadRawManifest(vault);
+  const entries = await loadManifest(vault);
+  const payload = raw || { version: 6, entries };
+  try {
+    const dir = await vault.getDirectoryHandle("snapshots", { create: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const name = `manifest-pre-import-${stamp}.json`;
+    const handle = await dir.getFileHandle(name, { create: true });
+    const writable = await handle.createWritable();
+    await writable.write(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
+    await writable.close();
+    return name;
+  } catch (err) {
+    console.warn("Pre-import snapshot failed", err);
+    return null;
+  }
 }

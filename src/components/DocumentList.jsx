@@ -1,6 +1,7 @@
 import { useRef, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { DocumentCard } from "./DocumentCard.jsx";
+import { explainSearchMatch } from "../lib/searchExplain.js";
 
 /**
  * @param {{
@@ -98,6 +99,7 @@ export function DocumentList({
                     doc={row.doc}
                     query={query}
                     snippet={query.trim() ? (contentById[row.doc.id] ?? "").slice(0, 160) : ""}
+                    matchReason={query.trim() ? explainSearchMatch(row.doc, query, contentById[row.doc.id]) : null}
                     onActivate={() => onDocOpen(row.doc)}
                     onKeyNav={onCardKeyDown}
                   />

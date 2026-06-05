@@ -78,4 +78,12 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
+
+  /* Silo brand aliases (plan tokens) */
+  --silo-bg: var(--color-bg);
+  --silo-surface: var(--color-surface);
+  --silo-accent: #c8963e;
+  --silo-info: #5bc8c4;
+  --silo-safe-top: var(--safe-top);
+  --silo-safe-bottom: var(--safe-bottom);
 }

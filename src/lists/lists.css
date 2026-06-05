@@ -489,6 +489,21 @@
   text-decoration: none;
 }
 
+.lists-privacy-banner {
+  margin: calc(44px + var(--safe-top)) var(--space-4) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--lists-text-secondary);
+  background: color-mix(in srgb, var(--lists-accent) 12%, var(--lists-surface));
+  border: 1px solid color-mix(in srgb, var(--lists-accent) 28%, var(--lists-border));
+  border-radius: 12px;
+}
+
+.lists-privacy-banner strong {
+  color: var(--lists-text);
+}
+
 @media (min-width: 720px) {
   .lists-app__scroll {
     max-width: 520px;
