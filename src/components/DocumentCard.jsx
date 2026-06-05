@@ -27,10 +27,11 @@ const TYPE_LABELS = {
  *   onActivate: (doc: object) => void,
  *   query?: string,
  *   snippet?: string,
+ *   matchReason?: string | null,
  *   onKeyNav?: (doc: object, e: import('react').KeyboardEvent) => void,
  * }} props
  */
-export function DocumentCard({ doc, isSelected, onActivate, query = "", snippet, onKeyNav }) {
+export function DocumentCard({ doc, isSelected, onActivate, query = "", snippet, matchReason, onKeyNav }) {
   const k = doc.kind || "pdf";
   const reduced = useReducedMotion();
 
@@ -71,6 +72,10 @@ export function DocumentCard({ doc, isSelected, onActivate, query = "", snippet,
             className="doc-card__snippet"
             dangerouslySetInnerHTML={{ __html: highlightQuery(snippet, query) }}
           />
+        )}
+
+        {matchReason && query && (
+          <p className="doc-card__match-reason">{matchReason}</p>
         )}
 
         {doc.tag && (

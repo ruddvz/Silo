@@ -14,6 +14,7 @@ import { RawTextPage } from "./pages/RawTextPage.jsx";
 import { SearchPage } from "./pages/SearchPage.jsx";
 import { ActivityPage } from "./pages/ActivityPage.jsx";
 import { SettingsPage } from "./pages/SettingsPage.jsx";
+import { ListsPrivacyBanner } from "./components/ListsPrivacyBanner.jsx";
 
 /**
  * Silo Lists — shared checklist files for two people.
@@ -108,6 +109,7 @@ export default function ListsApp() {
         <a href="#/" className="lists-vault-link" onClick={(e) => { e.preventDefault(); goVault(); }}>
           ← Vault
         </a>
+        <ListsPrivacyBanner />
         <LoginPage onLoggedIn={handleLoggedIn} onCreateSpace={() => setFlow("create")} />
       </div>
     );
@@ -164,6 +166,7 @@ export default function ListsApp() {
       <a href="#/" className="lists-vault-link" onClick={(e) => { e.preventDefault(); goVault(); }}>
         ← Vault
       </a>
+      <ListsPrivacyBanner />
       {tab === "lists" && (
         <ListsHomePage
           user={user}

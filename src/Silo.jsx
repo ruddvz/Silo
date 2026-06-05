@@ -28,7 +28,7 @@ import {
   getShareQueueStats,
   requestShareQueueBackgroundSync,
 } from "./vault/shareQueue.js";
-import { buildVaultZip, parseVaultZip, applyVaultZipToOpfs } from "./vault/exportBackup.js";
+import { buildVaultZip, parseVaultZip, applyVaultZipToOpfs, validateVaultZip, createPreImportSnapshot } from "./vault/exportBackup.js";
 import { persistSecureText, decodeStoredText, isEncryptedStoredPayload, isPassphraseActive } from "./vault/secureText.js";
 import { sha256HexFromBlob } from "./vault/fileHash.js";
 import { textContentFingerprint } from "./vault/textFingerprint.js";
@@ -75,6 +75,9 @@ import {
 } from "./data/demoVault.js";
 import { hasCompletedOnboarding, markOnboardingComplete } from "./lib/onboarding.js";
 import { OnboardingScreen } from "./components/OnboardingScreen.jsx";
+import { HomeScreen } from "./components/HomeScreen.jsx";
+import { BackupRestorePanel } from "./components/BackupRestorePanel.jsx";
+import { validateVaultFile, supportsLinkFromDisk } from "./lib/fileTypeRules.js";
 import "./silo-app.css";
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -114,7 +117,7 @@ export default function Silo({ onOpenLists }) {
   const [ptrBar, setPtrBar] = useState(0);
   const backupImportRef = useRef(null);
   const processAllPendingSharesRef = useRef(async () => {});
-  const [mobileTab, setMobileTab] = useState("vault");
+  const [mobileTab, setMobileTab] = useState("home");
   const [ingestStage, setIngestStage] = useState(/** @type {string | null} */ (null));
   const [ingestOverlayName, setIngestOverlayName] = useState(/** @type {string | null} */ (null));
   const [confirmMergeOpen, setConfirmMergeOpen] = useState(false);
@@ -142,6 +145,9 @@ export default function Silo({ onOpenLists }) {
   const [showRecoveryScreen, setShowRecoveryScreen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(
     () => !hasCompletedOnboarding() && !isDemoDataEnabled(),
+  );
+  const [lastBackupExport, setLastBackupExport] = useState(
+    () => (typeof localStorage !== "undefined" ? localStorage.getItem("silo_last_backup") : null) || "",
   );
 
   const storageMode = useStorageMode();
@@ -229,8 +235,23 @@ export default function Silo({ onOpenLists }) {
   }, [opfsReady]);
 
   useEffect(() => {
-    setNativeLinkReady(supportsNativeFileSystemLink());
+    setNativeLinkReady(supportsNativeFileSystemLink() && supportsLinkFromDisk());
   }, []);
+
+  /** Lazy-load embedding model only when semantic search is enabled. */
+  useEffect(() => {
+    if (!semanticSearchEnabled) {
+      setEmbeddingModelReady(false);
+      return;
+    }
+    let cancelled = false;
+    void import("./vault/embeddings.js")
+      .then((m) => m.warmUpEmbeddingModel())
+      .then((ext) => {
+        if (!cancelled) setEmbeddingModelReady(!!ext);
+      });
+    return () => { cancelled = true; };
+  }, [semanticSearchEnabled]);
 
   useEffect(() => {
     if (!ingestDialogOpen) return;
@@ -240,14 +261,6 @@ export default function Silo({ onOpenLists }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [ingestDialogOpen]);
-
-  useEffect(() => {
-    void import("./vault/embeddings.js")
-      .then((m) => m.warmUpEmbeddingModel())
-      .then((ext) => {
-        setEmbeddingModelReady(!!ext);
-      });
-  }, []);
 
   // ── Clean up timers on unmount ──
   useEffect(() => {
@@ -467,6 +480,14 @@ export default function Silo({ onOpenLists }) {
     return "Connecting…";
   }, [opfsReady, storageMode]);
 
+  const vaultSizeBytes = useMemo(
+    () => docs.filter((d) => d.source === "local").reduce((n, d) => n + (d.sizeBytes || 0), 0),
+    [docs],
+  );
+
+  const showHomePanel = mobileTab === "home";
+  const showVaultPanel = mobileTab !== "home";
+
   const totalGB = useMemo(() => {
     let mb = 0;
     for (const d of docs) {
@@ -478,10 +499,11 @@ export default function Silo({ onOpenLists }) {
 
   const indexAndPersistEmbedding = useCallback(async (vault, id, docRow, indexText) => {
     await persistSecureText(vault, id, indexText, vaultPassphrase);
+    setContentById((prev) => ({ ...prev, [id]: indexText }));
+    if (!semanticSearchEnabled) return;
     const combined = buildCombinedIndexText(docRow, indexText);
     const { embedText } = await import("./vault/embeddings.js");
     const vec = await embedText(combined);
-    setContentById((prev) => ({ ...prev, [id]: indexText }));
     if (vec) {
       await persistEmbedding(vault, id, vec);
       setEmbeddingsById((prev) => ({ ...prev, [String(id)]: vec }));
@@ -492,7 +514,7 @@ export default function Silo({ onOpenLists }) {
         return next;
       });
     }
-  }, [vaultPassphrase]);
+  }, [vaultPassphrase, semanticSearchEnabled]);
 
   const resolveLocalFile = useCallback(async (doc) => {
     if (doc.storage === "linked") {
@@ -568,14 +590,18 @@ export default function Silo({ onOpenLists }) {
 
   const ingestFromFile = useCallback(async (file, options) => {
     const { vault, storage, fileHandle } = options;
+    const validation = validateVaultFile(file);
+    if (!validation.ok) {
+      showToast(validation.error || "Invalid file");
+      return false;
+    }
+    if (validation.warning) showToast(validation.warning);
+
     setIngestStage("reading");
     setIngestOverlayName(file.name);
+    let extractionError = "";
     try {
-      const lower = file.name.toLowerCase();
-      let kind = "file";
-      if (lower.endsWith(".pdf")) kind = "pdf";
-      else if (/\.(png|jpe?g|gif|webp|bmp|heic|heif)$/i.test(lower)) kind = "image";
-      else if (/\.(m4a|aac|mp3|wav|webm|ogg|opus|flac)$/i.test(lower)) kind = "audio";
+      const kind = validation.kind || "file";
 
       let contentHash = "";
       try {
@@ -593,19 +619,34 @@ export default function Silo({ onOpenLists }) {
       let indexText = "";
 
       if (kind === "pdf") {
-        const buffer = await file.arrayBuffer();
-        const { extractTextFromPdfBuffer } = await import("./vault/extractPdfText.js");
-        indexText = await extractTextFromPdfBuffer(buffer);
+        try {
+          const buffer = await file.arrayBuffer();
+          const { extractTextFromPdfBuffer } = await import("./vault/extractPdfText.js");
+          indexText = await extractTextFromPdfBuffer(buffer);
+        } catch (err) {
+          extractionError = err?.message || "PDF text extraction failed";
+          indexText = `pdf document ${file.name}`;
+        }
       } else if (kind === "image") {
         setIngestStage("ocr");
-        const { extractTextFromImage } = await import("./vault/ocrImage.js");
-        indexText = await extractTextFromImage(file);
-        if (!indexText) indexText = `image screenshot ${file.name}`;
+        try {
+          const { extractTextFromImage } = await import("./vault/ocrImage.js");
+          indexText = await extractTextFromImage(file);
+          if (!indexText) indexText = `image screenshot ${file.name}`;
+        } catch (err) {
+          extractionError = err?.message || "OCR failed — original saved";
+          indexText = `image ${file.name}`;
+        }
       } else if (kind === "audio") {
         setIngestStage("transcribe");
-        const { transcribeAudio } = await import("./vault/transcribe.js");
-        indexText = (await transcribeAudio(file)).trim();
-        if (!indexText) indexText = `voice note audio ${file.name}`;
+        try {
+          const { transcribeAudio } = await import("./vault/transcribe.js");
+          indexText = (await transcribeAudio(file)).trim();
+          if (!indexText) indexText = `voice note audio ${file.name}`;
+        } catch (err) {
+          extractionError = err?.message || "Transcription failed — original saved";
+          indexText = `voice note audio ${file.name}`;
+        }
       } else {
         indexText = `file attachment ${file.type || "binary"} ${file.name}`;
       }
@@ -659,6 +700,8 @@ export default function Silo({ onOpenLists }) {
         ...(storage === "linked" && fileHandle?.name ? { linkedPath: fileHandle.name } : {}),
         ...(contentHash ? { contentHash } : {}),
         ...(textFingerprint ? { textFingerprint } : {}),
+        extractionStatus: extractionError ? "error" : "complete",
+        ...(extractionError ? { extractionError } : {}),
       };
       entries.push(entry);
       await saveManifest(vault, entries);
@@ -993,6 +1036,13 @@ export default function Silo({ onOpenLists }) {
       a.click();
       URL.revokeObjectURL(url);
       showToast("Backup downloaded");
+      const stamp = new Date().toISOString().slice(0, 10);
+      try {
+        localStorage.setItem("silo_last_backup", stamp);
+      } catch {
+        /* ignore */
+      }
+      setLastBackupExport(stamp);
     } catch (e) {
       console.error(e);
       showToast("Export failed");
@@ -1034,11 +1084,13 @@ export default function Silo({ onOpenLists }) {
     setIngestBusy(true);
     try {
       const buf = new Uint8Array(await file.arrayBuffer());
-      const { manifest, files } = parseVaultZip(buf);
-      if (!manifest?.entries?.length) throw new Error("bad zip");
-      await applyVaultZipToOpfs(vault, files, manifest.entries);
+      const parsed = parseVaultZip(buf);
+      const check = validateVaultZip(parsed);
+      if (!check.ok) throw new Error(check.error);
+      await createPreImportSnapshot(vault);
+      await applyVaultZipToOpfs(vault, parsed.files, parsed.manifest.entries);
       setVaultEpoch((x) => x + 1);
-      showToast("Backup merged (same id → this device wins)");
+      showToast(`Backup merged — ${check.entryCount} item(s)`);
     } catch (e) {
       console.error(e);
       showToast("Merge failed — use a Silo export .zip");
@@ -1509,6 +1561,35 @@ export default function Silo({ onOpenLists }) {
     }, 150);
   };
 
+  const needsAttention = useMemo(() => {
+    /** @type {Array<{ label: string, action?: () => void }>} */
+    const items = [];
+    const hasLocal = docs.some((d) => d.source === "local");
+    if (hasLocal && !lastBackupExport) {
+      items.push({ label: "No backup yet — export a ZIP from Settings", action: () => setSettingsOpen(true) });
+    }
+    if (importQueueCount > 0) {
+      items.push({ label: `${importQueueCount} share import(s) pending`, action: () => { void handleRetryShareImports(); } });
+    }
+    if (shareQueueFailedCount > 0) {
+      items.push({ label: `${shareQueueFailedCount} failed share import(s)`, action: () => setSettingsOpen(true) });
+    }
+    if (vaultHealthReport && !vaultHealthReport.healthy && vaultHealthReport.summary.critical > 0) {
+      items.push({ label: "Vault health issues — review recovery", action: () => { void handleCheckVaultIntegrity(); } });
+    }
+    return items;
+  }, [docs, lastBackupExport, importQueueCount, shareQueueFailedCount, vaultHealthReport, handleRetryShareImports, handleCheckVaultIntegrity]);
+
+  const handlePasteFromClipboard = useCallback(async () => {
+    try {
+      const t = await navigator.clipboard.readText();
+      if (t?.trim()) await handleSaveTextNote(t.trim());
+      else showToast("Clipboard is empty");
+    } catch {
+      showToast("Clipboard access denied");
+    }
+  }, [handleSaveTextNote, showToast]);
+
   useEffect(() => {
     if (mobileTab === "search") {
       const t = window.setTimeout(() => document.getElementById("silo-global-search")?.focus(), 60);
@@ -1516,7 +1597,7 @@ export default function Silo({ onOpenLists }) {
     }
     if (mobileTab === "settings") {
       setSettingsOpen(true);
-      setMobileTab("vault");
+      setMobileTab("home");
     }
     return undefined;
   }, [mobileTab]);
@@ -1710,6 +1791,23 @@ export default function Silo({ onOpenLists }) {
             </button>
           </div>
 
+          <div className={`home-screen-view ${showHomePanel ? "home-screen-view--active" : ""}`}>
+            <HomeScreen
+              docs={docs}
+              contentById={contentById}
+              vaultStatusLabel={vaultStatusLabel}
+              needsAttention={needsAttention}
+              ingestBusy={ingestBusy}
+              onAddFile={() => handlePickVaultFiles("any")}
+              onAddPhoto={() => handlePickVaultFiles("image")}
+              onAddNote={() => setNoteModalOpen(true)}
+              onAddVoice={() => handlePickVaultFiles("audio")}
+              onOpenDoc={(d) => { void handleOpenDoc(d); }}
+              onViewAll={() => setMobileTab("vault")}
+            />
+          </div>
+
+          <div className={`vault-main-view ${showVaultPanel ? "vault-main-view--active" : ""}`}>
           <div style={{ padding: "0 var(--space-6)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, marginTop: 14 }}>
             <motion.h1
               initial={{ opacity: 0, y: 6 }}
@@ -1835,6 +1933,7 @@ export default function Silo({ onOpenLists }) {
           />
         )}
       </div>
+          </div>
         </div>
 
         <div className="search-dock">
@@ -1878,12 +1977,15 @@ export default function Silo({ onOpenLists }) {
         onClose={() => setIngestDialogOpen(false)}
         ingestBusy={ingestBusy}
         nativeLinkReady={nativeLinkReady}
+        linkFromDiskSupported={supportsLinkFromDisk()}
         onPickFiles={(kind) => {
           handlePickVaultFiles(kind);
           setIngestDialogOpen(false);
         }}
         onLinkDisk={() => { void handleLinkFromDisk(); }}
         onNewNote={() => setNoteModalOpen(true)}
+        onPasteClipboard={() => { void handlePasteFromClipboard(); }}
+        onImportBackup={() => { backupImportRef.current?.click(); }}
       />
 
       <AnimatePresence>
@@ -1903,6 +2005,15 @@ export default function Silo({ onOpenLists }) {
       <AnimatePresence>
         {settingsOpen && (
           <SettingsDrawer onClose={() => setSettingsOpen(false)} actions={settingsActions}>
+            <BackupRestorePanel
+              itemCount={docs.filter((d) => d.source === "local").length}
+              vaultSizeBytes={vaultSizeBytes}
+              lastBackupHint={lastBackupExport || undefined}
+              busy={ingestBusy}
+              onExport={() => { void handleExportVaultZip(); }}
+              onImport={() => { backupImportRef.current?.click(); }}
+              onCheckHealth={() => { void handleCheckVaultIntegrity(); }}
+            />
             <div className="settings-extras">
               {storageStats && (
                 <p className="settings-meta">
