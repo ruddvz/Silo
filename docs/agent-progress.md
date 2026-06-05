@@ -29,14 +29,14 @@
 | 2 — App shell split | ✅ Complete | `cursor/app-shell-split-c74e` | #20 |
 | 3 — Onboarding / demo cleanup | ✅ Complete | `cursor/onboarding-demo-c74e` | #21 |
 | 4 — iOS PWA hardening | ✅ Complete | `cursor/ios-pwa-hardening-c74e` | #22 |
-| 5 — Mobile UI redesign | ✅ Complete | `cursor/phases-5-12-c74e` | pending |
-| 6 — Import pipeline | ✅ Complete | `cursor/phases-5-12-c74e` | pending |
-| 7 — Search/indexing | ✅ Complete | `cursor/phases-5-12-c74e` | pending |
-| 8 — Backup/restore/repair | ✅ Complete | `cursor/phases-5-12-c74e` | pending |
-| 9 — Security/privacy | ✅ Complete | `cursor/phases-5-12-c74e` | pending |
-| 10 — Shared lists | ✅ Complete | `cursor/phases-5-12-c74e` | pending |
-| 11 — Perf + a11y | ✅ Complete | `cursor/phases-5-12-c74e` | pending |
-| 12 — Release docs | ✅ Complete | `cursor/phases-5-12-c74e` | pending |
+| 5 — Mobile UI redesign | ✅ Complete | `cursor/phases-5-12-c74e` | #23 |
+| 6 — Import pipeline | ✅ Complete | `cursor/phases-5-12-c74e` | #23 |
+| 7 — Search/indexing | ✅ Complete | `cursor/phases-5-12-c74e` | #23 |
+| 8 — Backup/restore/repair | ✅ Complete | `cursor/phases-5-12-c74e` | #23 |
+| 9 — Security/privacy | ✅ Complete | `cursor/phases-5-12-c74e` | #23 |
+| 10 — Shared lists | ✅ Complete | `cursor/phases-5-12-c74e` | #23 |
+| 11 — Perf + a11y | ✅ Complete | `cursor/phases-5-12-c74e` | #23 |
+| 12 — Release docs | ✅ Complete | `cursor/phases-5-12-c74e` | #23 |
 
 ## Open bugs
 
