@@ -14,11 +14,25 @@ export async function getVaultRoot() {
 
 /** @param {FileSystemDirectoryHandle} vault */
 async function writeFileInVault(vault, subdir, name, blob) {
-  const dir = await vault.getDirectoryHandle(subdir, { create: true });
-  const handle = await dir.getFileHandle(name, { create: true });
-  const writable = await handle.createWritable();
-  await writable.write(blob);
-  await writable.close();
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const dir = await vault.getDirectoryHandle(subdir, { create: true });
+      const handle = await dir.getFileHandle(name, { create: true });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
+      }
+    }
+  }
+  const error = new Error(lastErr?.message || "OPFS write failed");
+  error.name = "OpfsWriteError";
+  throw error;
 }
 
 /** @param {FileSystemDirectoryHandle} vault */

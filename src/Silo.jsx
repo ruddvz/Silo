@@ -20,14 +20,6 @@ import {
   removeLinkedFileHandle,
   clearAllLinkedFileHandles,
 } from "./vault/nativeFileHandles.js";
-import {
-  removePendingShare,
-  getAllPendingShares,
-  recordShareImportFailure,
-  clearAllPendingShares,
-  getShareQueueStats,
-  requestShareQueueBackgroundSync,
-} from "./vault/shareQueue.js";
 import { buildVaultZip, parseVaultZip, applyVaultZipToOpfs, validateVaultZip, createPreImportSnapshot } from "./vault/exportBackup.js";
 import { persistSecureText, decodeStoredText, isEncryptedStoredPayload, isPassphraseActive } from "./vault/secureText.js";
 import { sha256HexFromBlob } from "./vault/fileHash.js";
@@ -61,6 +53,7 @@ import { usePWAInstall, bumpMeaningfulInteraction } from "./hooks/usePWAInstall.
 import { usePwaLifecycle } from "./hooks/usePwaLifecycle.js";
 import { UpdateAvailableBanner } from "./components/UpdateAvailableBanner.jsx";
 import { useVaultSearch } from "./hooks/useVaultSearch.js";
+import { useShareQueue } from "./hooks/useShareQueue.js";
 import { APP_ICON_SRC, DEFAULT_VAULT_FILE_ACCEPT, VAULT_FILE_ACCEPT_BY_KIND } from "./lib/vaultConstants.js";
 import { formatBytes, formatRelativeDate, parseMB } from "./lib/vaultFormat.js";
 import { ALL_TAGS, inferTagGuess, inferTagForNote } from "./lib/vaultTags.js";
@@ -77,6 +70,8 @@ import { hasCompletedOnboarding, markOnboardingComplete } from "./lib/onboarding
 import { OnboardingScreen } from "./components/OnboardingScreen.jsx";
 import { HomeScreen } from "./components/HomeScreen.jsx";
 import { BackupRestorePanel } from "./components/BackupRestorePanel.jsx";
+import { PassphraseModal } from "./components/PassphraseModal.jsx";
+import { TranscriptionFallbackModal } from "./components/TranscriptionFallbackModal.jsx";
 import { validateVaultFile, supportsLinkFromDisk } from "./lib/fileTypeRules.js";
 import "./silo-app.css";
 
@@ -102,8 +97,6 @@ export default function Silo({ onOpenLists }) {
   const [toast,         setToast]         = useState(null);
   const [vaultPassphrase, setVaultPassphrase] = useState(() => sessionStorage.getItem("silo_vault_pass") || "");
   const [smartView,     setSmartView]     = useState("");
-  const [importQueueCount, setImportQueueCount] = useState(0);
-  const [shareQueueFailedCount, setShareQueueFailedCount] = useState(0);
   const [vaultEpoch, setVaultEpoch] = useState(0);
 
   const pressTimer       = useRef(null);
@@ -116,15 +109,12 @@ export default function Silo({ onOpenLists }) {
   const ptrLastDy = useRef(0);
   const [ptrBar, setPtrBar] = useState(0);
   const backupImportRef = useRef(null);
-  const processAllPendingSharesRef = useRef(async () => {});
   const [mobileTab, setMobileTab] = useState("home");
   const [ingestStage, setIngestStage] = useState(/** @type {string | null} */ (null));
   const [ingestOverlayName, setIngestOverlayName] = useState(/** @type {string | null} */ (null));
   const [confirmMergeOpen, setConfirmMergeOpen] = useState(false);
   const pendingMergeFilesRef = useRef(null);
-  const [shareListItems, setShareListItems] = useState([]);
   const [embeddingModelReady, setEmbeddingModelReady] = useState(false);
-  const [sharePanelDismissed, setSharePanelDismissed] = useState(false);
   const [semanticSearchEnabled, setSemanticSearchEnabled] = useState(
     () => typeof localStorage !== "undefined" && localStorage.getItem("silo_semantic") !== "0",
   );
@@ -148,6 +138,10 @@ export default function Silo({ onOpenLists }) {
   );
   const [lastBackupExport, setLastBackupExport] = useState(
     () => (typeof localStorage !== "undefined" ? localStorage.getItem("silo_last_backup") : null) || "",
+  );
+  const [passphraseModal, setPassphraseModal] = useState(/** @type {"set" | "clear" | null} */ (null));
+  const [transcriptionFallback, setTranscriptionFallback] = useState(
+    /** @type {{ docId: string, fileName: string, vault: FileSystemDirectoryHandle } | null} */ (null),
   );
 
   const storageMode = useStorageMode();
@@ -193,46 +187,9 @@ export default function Silo({ onOpenLists }) {
   }, [settingsOpen]);
 
   useEffect(() => {
-    setSharePanelDismissed(false);
-  }, [importQueueCount]);
-
-  useEffect(() => {
     if (vaultPassphrase) sessionStorage.setItem("silo_vault_pass", vaultPassphrase);
     else sessionStorage.removeItem("silo_vault_pass");
   }, [vaultPassphrase]);
-
-  const refreshShareQueueCount = useCallback(async () => {
-    try {
-      const { total, failed } = await getShareQueueStats();
-      setImportQueueCount(total);
-      setShareQueueFailedCount(failed);
-      const all = await getAllPendingShares();
-      setShareListItems(all);
-    } catch {
-      setImportQueueCount(0);
-      setShareQueueFailedCount(0);
-      setShareListItems([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshShareQueueCount();
-    const id = setInterval(() => { void refreshShareQueueCount(); }, 5000);
-    return () => clearInterval(id);
-  }, [refreshShareQueueCount]);
-
-  useEffect(() => {
-    const onSwMessage = (e) => {
-      if (e.data?.type !== "SILO_PROCESS_SHARE_QUEUE") return;
-      if (!opfsReady) return;
-      void processAllPendingSharesRef.current();
-    };
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.addEventListener("message", onSwMessage);
-      return () => navigator.serviceWorker.removeEventListener("message", onSwMessage);
-    }
-    return undefined;
-  }, [opfsReady]);
 
   useEffect(() => {
     setNativeLinkReady(supportsNativeFileSystemLink() && supportsLinkFromDisk());
@@ -457,6 +414,7 @@ export default function Silo({ onOpenLists }) {
   }, [semanticSearchEnabled]);
 
   const hasResults = Object.keys(display).length > 0;
+  const searchResultCount = query.trim() ? Object.keys(display).length : null;
 
   const emptyVariant = useMemo(() => {
     if (hasResults) return "vault";
@@ -664,10 +622,17 @@ export default function Silo({ onOpenLists }) {
 
       const tag = inferTagGuess(`${indexText} ${file.name}`);
       setIngestStage("store");
-      if (storage === "opfs") {
-        await persistVaultBlob(vault, id, file);
-      } else if (fileHandle) {
-        await storeLinkedFileHandle(id, fileHandle);
+      try {
+        if (storage === "opfs") {
+          await persistVaultBlob(vault, id, file);
+        } else if (fileHandle) {
+          await storeLinkedFileHandle(id, fileHandle);
+        }
+      } catch (err) {
+        if (err?.name === "OpfsWriteError") {
+          showToast("Couldn't write to vault storage — try again");
+        }
+        throw err;
       }
 
       const row = {
@@ -707,23 +672,49 @@ export default function Silo({ onOpenLists }) {
       await saveManifest(vault, entries);
 
       setDocs((prev) => mergeDocs(prev, [row]));
-      showToast(
-        storage === "linked"
-          ? "Linked from disk (reads original file)"
-          : kind === "pdf"
-            ? "PDF indexed"
-            : kind === "audio"
-              ? "Voice note transcribed & indexed"
-              : kind === "image"
-                ? "Image OCR & indexed"
-                : "File saved to vault",
-      );
+      if (kind === "audio" && extractionError) {
+        setTranscriptionFallback({ docId: id, fileName: file.name, vault });
+        showToast("Transcription failed — add text manually");
+      } else {
+        showToast(
+          storage === "linked"
+            ? "Linked from disk (reads original file)"
+            : kind === "pdf"
+              ? "PDF indexed"
+              : kind === "audio"
+                ? "Voice note transcribed & indexed"
+                : kind === "image"
+                  ? "Image OCR & indexed"
+                  : "File saved to vault",
+        );
+      }
       return true;
     } finally {
       setIngestStage(null);
       setIngestOverlayName(null);
     }
   }, [indexAndPersistEmbedding, showToast, isDuplicateContent]);
+
+  const {
+    importQueueCount,
+    shareQueueFailedCount,
+    shareListItems,
+    sharePanelDismissed,
+    setSharePanelDismissed,
+    processAllPendingShares,
+    handleClearShareQueue,
+    handleRetryShareImports,
+  } = useShareQueue({
+    opfsReady,
+    ingestBusy,
+    setIngestBusy,
+    ensureVault,
+    ingestFromFile,
+    indexAndPersistEmbedding,
+    showToast,
+    isDuplicateContent,
+    setDocs,
+  });
 
   const handleVaultFiles = useCallback(async (fileList) => {
     const file = fileList?.[0];
@@ -873,110 +864,6 @@ export default function Silo({ onOpenLists }) {
       setIngestBusy(false);
     }
   }, [ensureVault, showToast, indexAndPersistEmbedding, isDuplicateContent]);
-
-  const processAllPendingShares = useCallback(async (onlyId) => {
-    const vault = await ensureVault();
-    if (!vault) return;
-    const allRaw = await getAllPendingShares();
-    const all = onlyId ? allRaw.filter((r) => r.id === onlyId) : allRaw;
-    if (!all.length) return;
-    setIngestBusy(true);
-    let ok = 0;
-    try {
-      for (const rec of all) {
-        let succeeded = false;
-        let lastErr = null;
-        try {
-          const files = rec.files || [];
-          let fileAdded = 0;
-          for (const fm of files) {
-            try {
-              const buf = new Uint8Array(fm.buffer);
-              const file = new File([buf], fm.name || "shared", { type: fm.type || "application/octet-stream" });
-              const added = await ingestFromFile(file, { vault, storage: "opfs", fileHandle: null });
-              if (added) fileAdded++;
-            } catch (e) {
-              lastErr = e;
-            }
-          }
-          if (fileAdded > 0) succeeded = true;
-          if (files.length > 0 && fileAdded === 0 && !lastErr) succeeded = true;
-
-          const noteBody = [rec.title, rec.text, rec.url].filter(Boolean).join("\n").trim();
-          if (noteBody) {
-            try {
-              const blob = new Blob([noteBody], { type: "text/plain;charset=utf-8" });
-              let h = "";
-              try { h = await sha256HexFromBlob(blob); } catch { h = ""; }
-              let tf = "";
-              try { tf = await textContentFingerprint(noteBody); } catch { tf = ""; }
-              if (await isDuplicateContent(vault, { contentHash: h, textFingerprint: tf })) {
-                succeeded = true;
-              } else {
-                const id = crypto.randomUUID();
-                const createdAt = new Date().toISOString();
-                const name = `Shared — ${noteBody.slice(0, 32)}${noteBody.length > 32 ? "…" : ""}.txt`;
-                const tag = inferTagForNote(noteBody);
-                await persistVaultBlob(vault, id, blob);
-                const row = {
-                  id, name, tag, kind: "text", storage: "opfs",
-                  date: formatRelativeDate(createdAt), size: formatBytes(blob.size), source: "local", createdAt, sizeBytes: blob.size,
-                  ...(h ? { contentHash: h } : {}),
-                  ...(tf ? { textFingerprint: tf } : {}),
-                };
-                await indexAndPersistEmbedding(vault, id, row, noteBody);
-                const entries = await loadManifest(vault);
-                entries.push({
-                  id, name, tag, kind: "text", createdAt, sizeBytes: blob.size, mimeType: "text/plain", storage: "opfs",
-                  ...(h ? { contentHash: h } : {}),
-                  ...(tf ? { textFingerprint: tf } : {}),
-                });
-                await saveManifest(vault, entries);
-                setDocs((prev) => mergeDocs(prev, [row]));
-                succeeded = true;
-              }
-            } catch (e) {
-              lastErr = e;
-            }
-          }
-
-          if (!files.length && !noteBody) succeeded = true;
-
-          if (succeeded) {
-            await removePendingShare(rec.id);
-            ok++;
-          } else if (lastErr) {
-            throw lastErr;
-          }
-        } catch (e) {
-          console.error("share row", e);
-          const n = await recordShareImportFailure(rec.id, e?.message || String(e));
-          void requestShareQueueBackgroundSync();
-          if (n >= 5) {
-            await removePendingShare(rec.id);
-            showToast("Dropped share after 5 failed imports");
-          } else {
-            showToast(`Share import failed (${n}/5)`);
-          }
-        }
-      }
-      void refreshShareQueueCount();
-      const params = new URLSearchParams(window.location.search);
-      if (params.get("shareImport") || params.get("shareError")) {
-        window.history.replaceState({}, "", window.location.pathname);
-      }
-      if (ok) showToast(`Imported ${ok} shared item(s)`);
-    } finally {
-      setIngestBusy(false);
-    }
-  }, [ensureVault, ingestFromFile, indexAndPersistEmbedding, refreshShareQueueCount, showToast, isDuplicateContent]);
-
-  processAllPendingSharesRef.current = processAllPendingShares;
-
-  useEffect(() => {
-    if (!opfsReady) return;
-    void processAllPendingShares(undefined);
-  }, [opfsReady, processAllPendingShares]);
 
   const handleImportFolderFromDisk = useCallback(async () => {
     if (!supportsDirectoryPicker()) {
@@ -1154,21 +1041,79 @@ export default function Silo({ onOpenLists }) {
     }
   }, [resolveLocalFile, vaultPassphrase, showToast, semanticSearchEnabled]);
 
-  const handleClearShareQueue = useCallback(async () => {
-    await clearAllPendingShares();
-    void refreshShareQueueCount();
-    showToast("Cleared pending shares");
-  }, [refreshShareQueueCount, showToast]);
+  const handleTranscriptionFallbackSave = useCallback(async (text) => {
+    if (!transcriptionFallback) return;
+    const { docId, vault } = transcriptionFallback;
+    const doc = docs.find((d) => d.id === docId);
+    setIngestBusy(true);
+    try {
+      await persistSecureText(vault, docId, text, vaultPassphrase);
+      setContentById((prev) => ({ ...prev, [docId]: text }));
+      if (doc) await indexAndPersistEmbedding(vault, docId, doc, text);
+      const entries = await loadManifest(vault);
+      const idx = entries.findIndex((e) => e.id === docId);
+      if (idx >= 0) {
+        entries[idx] = { ...entries[idx], extractionStatus: "complete", extractionError: undefined };
+        await saveManifest(vault, entries);
+      }
+      showToast("Transcript saved");
+      setTranscriptionFallback(null);
+    } catch (err) {
+      console.error(err);
+      showToast("Could not save transcript");
+    } finally {
+      setIngestBusy(false);
+    }
+  }, [transcriptionFallback, docs, vaultPassphrase, indexAndPersistEmbedding, showToast]);
 
-  const handleRetryShareImports = useCallback(async () => {
-    if (!opfsReady) {
-      showToast("Vault not ready");
+  const handlePassphraseConfirm = useCallback(async (passphrase, confirm) => {
+    if (passphraseModal === "set") {
+      if (!passphrase) {
+        setPassphraseModal(null);
+        return;
+      }
+      if (passphrase.length < 8) {
+        showToast("Passphrase too short");
+        return;
+      }
+      if (passphrase !== confirm) {
+        showToast("Mismatch");
+        return;
+      }
+      setIngestBusy(true);
+      try {
+        await rewrapAllVaultText(passphrase, vaultPassphrase);
+        setVaultPassphrase(passphrase);
+        setVaultEpoch((x) => x + 1);
+        showToast("Vault text encrypted with passphrase");
+        setPassphraseModal(null);
+      } finally {
+        setIngestBusy(false);
+      }
       return;
     }
-    void requestShareQueueBackgroundSync();
-    await processAllPendingShares(undefined);
-    void refreshShareQueueCount();
-  }, [opfsReady, processAllPendingShares, refreshShareQueueCount, showToast]);
+    if (passphraseModal === "clear") {
+      if (!vaultPassphrase) {
+        showToast("No passphrase set");
+        setPassphraseModal(null);
+        return;
+      }
+      if (passphrase !== vaultPassphrase) {
+        showToast("Wrong passphrase");
+        return;
+      }
+      setIngestBusy(true);
+      try {
+        await rewrapAllVaultText("", vaultPassphrase);
+        setVaultPassphrase("");
+        setVaultEpoch((x) => x + 1);
+        showToast("Passphrase cleared");
+        setPassphraseModal(null);
+      } finally {
+        setIngestBusy(false);
+      }
+    }
+  }, [passphraseModal, vaultPassphrase, rewrapAllVaultText, showToast]);
 
   const settingsActions = useMemo(() => [
     {
@@ -1239,56 +1184,13 @@ export default function Silo({ onOpenLists }) {
       id: "pass",
       label: "Set vault passphrase (encrypts index text)",
       icon: "🔒",
-      onSelect: async () => {
-        const p1 = window.prompt("New passphrase (min 8 chars). Leave empty to skip:");
-        if (p1 == null) return;
-        if (p1.length > 0 && p1.length < 8) {
-          showToast("Passphrase too short");
-          return;
-        }
-        const oldP = vaultPassphrase;
-        if (p1) {
-          const p2 = window.prompt("Confirm passphrase:");
-          if (p1 !== p2) {
-            showToast("Mismatch");
-            return;
-          }
-          setIngestBusy(true);
-          try {
-            await rewrapAllVaultText(p1, oldP);
-            setVaultPassphrase(p1);
-            setVaultEpoch((x) => x + 1);
-            showToast("Vault text encrypted with passphrase");
-          } finally {
-            setIngestBusy(false);
-          }
-        }
-      },
+      onSelect: () => setPassphraseModal("set"),
     },
     {
       id: "clearpass",
       label: "Clear vault passphrase",
       icon: "🔓",
-      onSelect: async () => {
-        if (!vaultPassphrase) {
-          showToast("No passphrase set");
-          return;
-        }
-        const cur = window.prompt("Current passphrase:");
-        if (cur !== vaultPassphrase) {
-          showToast("Wrong passphrase");
-          return;
-        }
-        setIngestBusy(true);
-        try {
-          await rewrapAllVaultText("", vaultPassphrase);
-          setVaultPassphrase("");
-          setVaultEpoch((x) => x + 1);
-          showToast("Passphrase cleared");
-        } finally {
-          setIngestBusy(false);
-        }
-      },
+      onSelect: () => setPassphraseModal("clear"),
     },
     {
       id: "privacy",
@@ -1310,8 +1212,6 @@ export default function Silo({ onOpenLists }) {
     opfsReady,
     ingestBusy,
     semanticSearchEnabled,
-    rewrapAllVaultText,
-    vaultPassphrase,
     showToast,
     setQueryVec,
   ]);
@@ -1944,6 +1844,7 @@ export default function Silo({ onOpenLists }) {
             semanticReady={!semanticSearchEnabled || embeddingModelReady}
             semanticLabel={semanticSearchEnabled ? (embeddingModelReady ? "Semantic ✓" : "Loading AI…") : ""}
             placeholder="Search vault…"
+            resultCount={searchResultCount}
             onBlur={handleSearchBlur}
           />
         </div>
@@ -2046,6 +1947,11 @@ export default function Silo({ onOpenLists }) {
                   <option value="compact">Compact</option>
                 </select>
               </label>
+              <p className="settings-meta">
+                <a href={`${import.meta.env.BASE_URL}native/README.md`.replace(/\/{2,}/g, "/")} target="_blank" rel="noopener noreferrer">
+                  Android TWA / native packaging guide
+                </a>
+              </p>
             </div>
           </SettingsDrawer>
         )}
@@ -2094,6 +2000,29 @@ export default function Silo({ onOpenLists }) {
                 ? () => setShowRecoveryScreen(false)
                 : undefined
             }
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {passphraseModal && (
+          <PassphraseModal
+            key={passphraseModal}
+            mode={passphraseModal}
+            busy={ingestBusy}
+            onConfirm={(p, c) => { void handlePassphraseConfirm(p, c); }}
+            onCancel={() => setPassphraseModal(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {transcriptionFallback && (
+          <TranscriptionFallbackModal
+            fileName={transcriptionFallback.fileName}
+            busy={ingestBusy}
+            onSave={(t) => { void handleTranscriptionFallbackSave(t); }}
+            onSkip={() => setTranscriptionFallback(null)}
           />
         )}
       </AnimatePresence>

@@ -5,7 +5,7 @@ const BODY = `Silo stores your vault on this device by default. Your files are n
 
 What stays local: original files (OPFS), extracted text, search index, and optional semantic embeddings — all computed in your browser.
 
-Optional passphrase: encrypts indexed/extracted text at rest. It does not encrypt original file blobs unless you use full-blob encryption (planned). If you forget the passphrase, encrypted text cannot be recovered.
+Optional passphrase: encrypts indexed/extracted text at rest. Full-blob encryption helpers (blobCrypto module) are available for future opt-in; today only index text is encrypted when a passphrase is set. If you forget the passphrase, encrypted text cannot be recovered.
 
 Shared lists (optional): if you enable Supabase in Settings → Lists, only shared checklist data goes to your connected Supabase project — not your private vault files.
 

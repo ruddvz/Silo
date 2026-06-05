@@ -33,6 +33,7 @@ jobs:
           VITE_BASE_URL: /${{ github.event.repository.name }}/
         run: |
           npm ci
+          npm run gen:icons
           npm run build
 
       - uses: actions/upload-pages-artifact@v4

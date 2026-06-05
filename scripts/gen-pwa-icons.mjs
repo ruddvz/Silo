@@ -60,4 +60,21 @@ await maskable(512, "icon-512-mask.png");
 await screenshot(1280, 800, "desktop.png");
 await screenshot(390, 844, "mobile.png");
 
-console.log("Wrote PNG icons and screenshots under public/");
+const splashDir = path.join(root, "public", "splash");
+await fs.promises.mkdir(splashDir, { recursive: true });
+
+async function splash(w, h, name) {
+  const svgBuf = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+      <rect width="100%" height="100%" fill="#0f0f10"/>
+      <text x="50%" y="46%" text-anchor="middle" fill="#f0eff4" font-family="Georgia,serif" font-size="${Math.round(w / 10)}">Silo</text>
+      <text x="50%" y="54%" text-anchor="middle" fill="#8b8a94" font-family="system-ui,sans-serif" font-size="${Math.round(w / 24)}">Private vault</text>
+    </svg>`,
+  );
+  await sharp(svgBuf).png().toFile(path.join(splashDir, name));
+}
+
+await splash(1170, 2532, "iphone-portrait.png");
+await splash(1284, 2778, "iphone-large.png");
+
+console.log("Wrote PNG icons, screenshots, and splash images under public/");
