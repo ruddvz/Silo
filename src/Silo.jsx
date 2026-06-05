@@ -58,6 +58,8 @@ import { NoteModal } from "./components/NoteModal.jsx";
 import { ContextMenu } from "./components/ContextMenu.jsx";
 import { useStorageMode } from "./hooks/useStorageMode.js";
 import { usePWAInstall, bumpMeaningfulInteraction } from "./hooks/usePWAInstall.js";
+import { usePwaLifecycle } from "./hooks/usePwaLifecycle.js";
+import { UpdateAvailableBanner } from "./components/UpdateAvailableBanner.jsx";
 import { useVaultSearch } from "./hooks/useVaultSearch.js";
 import { APP_ICON_SRC, DEFAULT_VAULT_FILE_ACCEPT, VAULT_FILE_ACCEPT_BY_KIND } from "./lib/vaultConstants.js";
 import { formatBytes, formatRelativeDate, parseMB } from "./lib/vaultFormat.js";
@@ -144,6 +146,7 @@ export default function Silo({ onOpenLists }) {
 
   const storageMode = useStorageMode();
   const { showBanner: showInstallBanner, deferredPrompt, install: pwaInstall, dismiss: dismissInstallBanner } = usePWAInstall();
+  const { updateReady, reloadToUpdate, dismissUpdate } = usePwaLifecycle();
 
   useEffect(() => {
     try {
@@ -1534,10 +1537,16 @@ export default function Silo({ onOpenLists }) {
         </div>
       )}
 
+      {updateReady && (
+        <div style={{ gridColumn: "1 / -1", paddingTop: "var(--safe-top)" }}>
+          <UpdateAvailableBanner onReload={reloadToUpdate} onDismiss={dismissUpdate} />
+        </div>
+      )}
+
       <ConfirmDialog
         open={confirmResetOpen}
         title="Reset entire vault?"
-        body="This deletes all documents stored in Silo on this device (OPFS). Demo sample documents will return. Linked file handles are cleared. This cannot be undone."
+        body="This deletes all documents stored in Silo on this device (OPFS). Linked file handles are cleared. This cannot be undone."
         confirmLabel="Yes, reset vault"
         confirmVariant="danger"
         onConfirm={() => { void executeResetVault(); }}

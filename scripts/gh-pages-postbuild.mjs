@@ -35,6 +35,7 @@ if (fs.existsSync(manifestPath)) {
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   manifest.start_url = base;
   manifest.scope = base;
+  manifest.id = base;
   if (manifest.icons && Array.isArray(manifest.icons)) {
     for (const icon of manifest.icons) {
       if (typeof icon.src === "string" && icon.src.startsWith("/")) {

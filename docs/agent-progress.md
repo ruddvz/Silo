@@ -1,7 +1,7 @@
 # Silo Agent Progress
 
 **Last updated:** 2026-06-05  
-**Current phase:** Phase 2 — App shell and file split
+**Current phase:** Phase 5+ — Mobile UI redesign and remaining P0/P1 items
 
 ## Baseline (main @ start)
 
@@ -14,21 +14,21 @@
 
 ## Known issues at audit
 
-- Demo seed documents load in production (`SEED_DOCS` in `Silo.jsx`) — Phase 3
-- `Silo.jsx` ~2400 lines — Phase 2 refactor
+- ~~Demo seed documents load in production~~ — fixed Phase 3
+- `Silo.jsx` still ~1950 lines — further refactor in later phases
 - ~~Integrity check flags missing embeddings even when semantic search off~~ — fixed Phase 1
 - ~~No explicit migration runner~~ — fixed Phase 1
 - ~~No manifest snapshot before migrations~~ — fixed Phase 1
-- Missing `docs/ios-pwa-test-plan.md` — Phase 4/12
+- ~~Missing `docs/ios-pwa-test-plan.md`~~ — added Phase 4
 
 ## Phase checklist
 
 | Phase | Status | Branch | PR |
 |-------|--------|--------|-----|
 | 1 — Baseline + data safety | ✅ Complete | `cursor/p0-data-safety-c74e` | #19 |
-| 2 — App shell split | ✅ Complete | `cursor/app-shell-split-c74e` | pending |
-| 3 — Onboarding / demo cleanup | ⏳ Pending | — | — |
-| 4 — iOS PWA hardening | ⏳ Pending | — | — |
+| 2 — App shell split | ✅ Complete | `cursor/app-shell-split-c74e` | #20 |
+| 3 — Onboarding / demo cleanup | ✅ Complete | `cursor/onboarding-demo-c74e` | #21 |
+| 4 — iOS PWA hardening | ✅ Complete | `cursor/ios-pwa-hardening-c74e` | pending |
 | 5 — Mobile UI redesign | ⏳ Pending | — | — |
 | 6 — Import pipeline | ⏳ Pending | — | — |
 | 7 — Search/indexing | ⏳ Pending | — | — |
@@ -44,4 +44,4 @@ _None tracked yet._
 
 ## Manual test notes
 
-_Pending iPhone Safari / Home Screen PWA testing._
+_iOS PWA checklist at `docs/ios-pwa-test-plan.md` — device testing still required._
