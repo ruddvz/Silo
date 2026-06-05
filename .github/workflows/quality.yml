@@ -57,6 +57,7 @@ jobs:
             fi
             sleep 1
           done
+          node scripts/check-render.mjs "${PREVIEW_URL}"
           npx @axe-core/cli "${PREVIEW_URL}" --exit --tags wcag2a
 
       # Lighthouse often hits NO_FCP against local Vite preview in headless CI; run it locally after `vite preview` if needed (see docs/device-qa-checklist.md).

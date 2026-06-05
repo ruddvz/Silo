@@ -26,6 +26,11 @@ const FILTERS = ["All", "PDF", "Images", "Notes", "Voice", "Identity", "Finance"
  *   onPointerUp: (doc: object) => void,
  *   onPointerCancel: () => void,
  *   onSwipeDelete: (doc: object) => void,
+ *   onSwipeMore?: (doc: object) => void,
+ *   onSwipeBackup?: (doc: object) => void,
+ *   onSwipePin?: (doc: object) => void,
+ *   onDocPreview?: (doc: object) => void,
+ *   pinnedIds?: Set<string>,
  *   onCardKeyDown: (doc: object, e: import('react').KeyboardEvent) => void,
  *   onAddNote?: () => void,
  *   onClearSearch?: () => void,
@@ -48,6 +53,11 @@ export function SearchScreen({
   onPointerUp,
   onPointerCancel,
   onSwipeDelete,
+  onSwipeMore,
+  onSwipeBackup,
+  onSwipePin,
+  onDocPreview,
+  pinnedIds,
   onCardKeyDown,
   onAddNote,
   onClearSearch,
@@ -150,10 +160,15 @@ export function SearchScreen({
             contentById={contentById}
             cardVariant="searchResult"
             onDocOpen={onDocOpen}
+            onDocPreview={onDocPreview}
             onPointerDown={onPointerDown}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerCancel}
             onSwipeDelete={onSwipeDelete}
+            onSwipeMore={onSwipeMore}
+            onSwipeBackup={onSwipeBackup}
+            onSwipePin={onSwipePin}
+            pinnedIds={pinnedIds}
             onCardKeyDown={onCardKeyDown}
           />
         )}

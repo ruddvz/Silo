@@ -11,12 +11,12 @@ page.on("console", (msg) => {
 await page.goto(url, { waitUntil: "load", timeout: 30000 });
 await page.waitForTimeout(3000);
 const rootHtml = await page.$eval("#root", (el) => el.innerHTML);
-const visible = await page.evaluate(() => {
-  const el = document.querySelector("#root");
-  if (!el || !el.firstElementChild) return false;
-  const rect = el.getBoundingClientRect();
-  return rect.width > 0 && el.innerText.trim().length > 0;
-});
+  const visible = await page.evaluate(() => {
+    const root = document.querySelector("#root");
+    if (!root || !root.firstElementChild) return false;
+    if (root.querySelector(".silo-boot-fallback") && !root.querySelector(".silo-app-shell, .app-shell")) return false;
+    return root.innerText.trim().length > 20;
+  });
   const pageErrors = errors.filter((e) => !e.startsWith("console:"));
   const hasFatal = pageErrors.length > 0;
   console.log(JSON.stringify({ url, rootLen: rootHtml.length, visible, preview: rootHtml.slice(0, 400), errors }, null, 2));

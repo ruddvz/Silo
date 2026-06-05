@@ -29,6 +29,11 @@ import { IconVault, IconShield, IconSearch, IconFile } from "../components/ui/ic
  *   onPointerUp: (doc: object) => void,
  *   onPointerCancel: () => void,
  *   onSwipeDelete: (doc: object) => void,
+ *   onSwipeMore?: (doc: object) => void,
+ *   onSwipeBackup?: (doc: object) => void,
+ *   onSwipePin?: (doc: object) => void,
+ *   onDocPreview?: (doc: object) => void,
+ *   pinnedIds?: Set<string>,
  *   onCardKeyDown: (doc: object, e: import('react').KeyboardEvent) => void,
  * }} props
  */
@@ -55,6 +60,11 @@ export function VaultScreen({
   onPointerUp,
   onPointerCancel,
   onSwipeDelete,
+  onSwipeMore,
+  onSwipeBackup,
+  onSwipePin,
+  onDocPreview,
+  pinnedIds,
   onCardKeyDown,
 }) {
   return (
@@ -119,12 +129,16 @@ export function VaultScreen({
             display={display}
             query={query}
             contentById={contentById}
-            cardVariant="comfortable"
             onDocOpen={onDocOpen}
+            onDocPreview={onDocPreview}
             onPointerDown={onPointerDown}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerCancel}
             onSwipeDelete={onSwipeDelete}
+            onSwipeMore={onSwipeMore}
+            onSwipeBackup={onSwipeBackup}
+            onSwipePin={onSwipePin}
+            pinnedIds={pinnedIds}
             onCardKeyDown={onCardKeyDown}
           />
         )}
