@@ -63,55 +63,17 @@ import { APP_ICON_SRC, DEFAULT_VAULT_FILE_ACCEPT, VAULT_FILE_ACCEPT_BY_KIND } fr
 import { formatBytes, formatRelativeDate, parseMB } from "./lib/vaultFormat.js";
 import { ALL_TAGS, inferTagGuess, inferTagForNote } from "./lib/vaultTags.js";
 import { mergeDocs, buildCombinedIndexText, SMART_VIEWS, supportsDirectoryPicker } from "./lib/vaultDocs.js";
+import {
+  SEED_DOCS,
+  DEMO_INDEX_BOOST,
+  DEMO_TEXT_BODY,
+  isDemoDataEnabled,
+  getInitialDemoDocs,
+  getInitialDemoContentById,
+} from "./data/demoVault.js";
+import { hasCompletedOnboarding, markOnboardingComplete } from "./lib/onboarding.js";
+import { OnboardingScreen } from "./components/OnboardingScreen.jsx";
 import "./silo-app.css";
-
-// ─── Data ────────────────────────────────────────────────────────────────────
-
-const SEED_DOCS = [
-  { id: 1,  name: "passport_scan.pdf",      tag: "Identity",  kind: "pdf",  date: "Mar 12, 2024", size: "2.1 MB",  source: "demo", createdAt: "2024-03-12T12:00:00.000Z" },
-  { id: 2,  name: "drivers_license.pdf",    tag: "Identity",  kind: "pdf",  date: "Jan 08, 2024", size: "980 KB", source: "demo", createdAt: "2024-01-08T12:00:00.000Z" },
-  { id: 11, name: "sincard.pdf",            tag: "Identity",  kind: "pdf",  date: "May 01, 2023", size: "150 KB", source: "demo", createdAt: "2023-05-01T12:00:00.000Z" },
-  { id: 3,  name: "hydro_bill_feb.pdf",     tag: "Utilities", kind: "pdf",  date: "Feb 28, 2024", size: "340 KB", source: "demo", createdAt: "2024-02-28T12:00:00.000Z" },
-  { id: 8,  name: "hydro_bill_jan.pdf",     tag: "Utilities", kind: "pdf",  date: "Jan 29, 2024", size: "310 KB", source: "demo", createdAt: "2024-01-29T12:00:00.000Z" },
-  { id: 4,  name: "lease_agreement.pdf",    tag: "Housing",   kind: "pdf",  date: "Sep 01, 2023", size: "4.8 MB", source: "demo", createdAt: "2023-09-01T12:00:00.000Z" },
-  { id: 12, name: "lease_renewal_2024.pdf", tag: "Housing",   kind: "pdf",  date: "Mar 15, 2024", size: "3.1 MB", source: "demo", createdAt: "2024-03-15T12:00:00.000Z" },
-  { id: 5,  name: "t4_2023.pdf",            tag: "Tax",       kind: "pdf",  date: "Feb 20, 2024", size: "1.2 MB", source: "demo", createdAt: "2024-02-20T12:00:00.000Z" },
-  { id: 9,  name: "bank_statement_mar.pdf", tag: "Finance",   kind: "pdf",  date: "Mar 31, 2024", size: "890 KB", source: "demo", createdAt: "2024-03-31T12:00:00.000Z" },
-  { id: 10, name: "void_cheque.pdf",        tag: "Finance",   kind: "pdf",  date: "Nov 10, 2023", size: "220 KB", source: "demo", createdAt: "2023-11-10T12:00:00.000Z" },
-  { id: 6,  name: "insurance_auto.pdf",     tag: "Insurance", kind: "pdf",  date: "Jan 15, 2024", size: "2.6 MB", source: "demo", createdAt: "2024-01-15T12:00:00.000Z" },
-  { id: 7,  name: "college_diploma.pdf",    tag: "Education", kind: "pdf",  date: "Jun 15, 2022", size: "5.3 MB", source: "demo", createdAt: "2022-06-15T12:00:00.000Z" },
-  {
-    id: 20,
-    name: "WhatsApp — rent reminder.txt",
-    tag: "Moments",
-    kind: "text",
-    date: "Apr 02, 2024",
-    size: "420 B",
-    source: "demo",
-    createdAt: "2024-04-02T18:30:00.000Z",
-  },
-];
-
-/** Extra phrases so demo search behaves more like semantic "concepts" */
-const DEMO_INDEX_BOOST = {
-  1: "passport travel identity citizenship",
-  2: "driver license driving permit identification",
-  11: "social insurance national identity card",
-  3: "hydro electricity utility bill power",
-  8: "hydro electricity utility bill power",
-  4: "lease rent housing apartment landlord",
-  12: "lease renewal housing rent",
-  5: "income tax t4 employment earnings",
-  9: "bank account statement finance",
-  10: "cheque checking account void finance",
-  6: "auto vehicle car insurance policy",
-  7: "university college degree diploma education",
-  20: "whatsapp message forwarded note self chat reminder landlord rent due april",
-};
-
-const DEMO_TEXT_BODY = {
-  20: "Hey — reminder rent is due April 5. E-transfer to the usual address. Thx!",
-};
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -119,15 +81,8 @@ const DEMO_TEXT_BODY = {
 export default function Silo({ onOpenLists }) {
   const [activeTag,     setActiveTag]     = useState("All");
   const [query,         setQuery]         = useState("");
-  const [docs,          setDocs]          = useState(() => SEED_DOCS.map((d) => ({ ...d, kind: d.kind || "pdf" })));
-  const [contentById,  setContentById]   = useState(() => {
-    const o = {};
-    for (const d of SEED_DOCS) {
-      if (d.kind === "text" && DEMO_TEXT_BODY[d.id]) o[d.id] = DEMO_TEXT_BODY[d.id];
-      else o[d.id] = `${String(d.name).replace(/\.(pdf|txt)$/i, "").replace(/_/g, " ")} ${d.tag} ${DEMO_INDEX_BOOST[d.id] || ""}`;
-    }
-    return o;
-  });
+  const [docs,          setDocs]          = useState(() => getInitialDemoDocs());
+  const [contentById,  setContentById]   = useState(() => getInitialDemoContentById());
   const [opfsReady,     setOpfsReady]     = useState(false);
   const [nativeLinkReady, setNativeLinkReady] = useState(false);
   const [ingestBusy,    setIngestBusy]    = useState(false);
@@ -183,6 +138,9 @@ export default function Silo({ onOpenLists }) {
   const [storageStats, setStorageStats] = useState(/** @type {{ usage: number, quota: number } | null} */ (null));
   const [vaultHealthReport, setVaultHealthReport] = useState(/** @type {import("./vault/health.js").ReturnType<typeof checkVaultHealth> extends Promise<infer R> ? R | null : null} */ (null));
   const [showRecoveryScreen, setShowRecoveryScreen] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(
+    () => !hasCompletedOnboarding() && !isDemoDataEnabled(),
+  );
 
   const storageMode = useStorageMode();
   const { showBanner: showInstallBanner, deferredPrompt, install: pwaInstall, dismiss: dismissInstallBanner } = usePWAInstall();
@@ -379,6 +337,10 @@ export default function Silo({ onOpenLists }) {
         const entries = await loadManifest(vault);
         if (cancelled || !entries.length) {
           setVaultUnlockGate(false);
+          if (entries.length > 0) {
+            markOnboardingComplete();
+            setShowOnboarding(false);
+          }
           return;
         }
 
@@ -417,6 +379,8 @@ export default function Silo({ onOpenLists }) {
         }
         setDocs((prev) => mergeDocs(prev.filter((d) => d.source !== "local"), localRows));
         setContentById((prev) => ({ ...prev, ...contentUpdates }));
+        markOnboardingComplete();
+        setShowOnboarding(false);
 
         const health = await checkVaultHealth(vault, entries, { semanticSearchEnabled });
         if (!cancelled) {
@@ -452,9 +416,9 @@ export default function Silo({ onOpenLists }) {
     embeddingsById,
   });
 
-  // ── Demo docs: local embeddings for hybrid semantic search ──
+  // ── Demo docs: local embeddings for hybrid semantic search (demo mode only) ──
   useEffect(() => {
-    if (!semanticSearchEnabled) return;
+    if (!semanticSearchEnabled || !isDemoDataEnabled()) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -488,6 +452,18 @@ export default function Silo({ onOpenLists }) {
   }, [hasResults, query, smartView, activeTag, docs.length]);
 
   // Total converted to GB for the hero stat
+  const handleOnboardingComplete = useCallback(() => {
+    markOnboardingComplete();
+    setShowOnboarding(false);
+  }, []);
+
+  const vaultStatusLabel = useMemo(() => {
+    if (isDemoDataEnabled()) return "Demo vault";
+    if (opfsReady) return "Private on this device";
+    if (storageMode !== "checking" && storageMode !== "opfs") return "Limited storage";
+    return "Connecting…";
+  }, [opfsReady, storageMode]);
+
   const totalGB = useMemo(() => {
     let mb = 0;
     for (const d of docs) {
@@ -1375,18 +1351,13 @@ export default function Silo({ onOpenLists }) {
       }
       await saveManifest(vault, []);
       await clearAllLinkedFileHandles();
-      setDocs(SEED_DOCS.map((d) => ({ ...d, kind: d.kind || "pdf" })));
-      const demoContent = {};
-      for (const d of SEED_DOCS) {
-        if (d.kind === "text" && DEMO_TEXT_BODY[d.id]) demoContent[d.id] = DEMO_TEXT_BODY[d.id];
-        else demoContent[d.id] = `${String(d.name).replace(/\.(pdf|txt)$/i, "").replace(/_/g, " ")} ${d.tag} ${DEMO_INDEX_BOOST[d.id] || ""}`;
-      }
-      setContentById(demoContent);
+      setDocs(getInitialDemoDocs());
+      setContentById(getInitialDemoContentById());
       setEmbeddingsById({});
       setPreviewDoc(null);
       setVaultUnlockGate(false);
       setVaultEpoch((x) => x + 1);
-      showToast("Vault reset — demo items restored");
+      showToast(isDemoDataEnabled() ? "Vault reset — demo items restored" : "Vault reset — all local data cleared");
     } catch (e) {
       console.error(e);
       showToast("Reset failed");
@@ -1705,7 +1676,7 @@ export default function Silo({ onOpenLists }) {
                       boxShadow: opfsReady ? "0 0 8px color-mix(in srgb, var(--color-success) 50%, transparent)" : "none",
                       flexShrink: 0,
                     }}
-                    title={opfsReady ? "Vault ready" : "Demo mode"}
+                    title={vaultStatusLabel}
                     aria-hidden
                   />
                 </div>
@@ -1976,6 +1947,16 @@ export default function Silo({ onOpenLists }) {
             doc={renameDoc}
             onConfirm={(newName) => { void handleRename(renameDoc, newName); }}
             onCancel={() => setRenameDoc(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showOnboarding && !vaultListLoading && (
+          <OnboardingScreen
+            storageLimited={storageMode !== "checking" && storageMode !== "opfs"}
+            onComplete={handleOnboardingComplete}
+            onAddFirst={() => setIngestDialogOpen(true)}
           />
         )}
       </AnimatePresence>
