@@ -52,7 +52,7 @@ import { usePwaLifecycle } from "./hooks/usePwaLifecycle.js";
 import { UpdateAvailableBanner } from "./components/UpdateAvailableBanner.jsx";
 import { useVaultSearch } from "./hooks/useVaultSearch.js";
 import { useShareQueue } from "./hooks/useShareQueue.js";
-import { APP_ICON_SRC, DEFAULT_VAULT_FILE_ACCEPT, VAULT_FILE_ACCEPT_BY_KIND } from "./lib/vaultConstants.js";
+import { DEFAULT_VAULT_FILE_ACCEPT, VAULT_FILE_ACCEPT_BY_KIND } from "./lib/vaultConstants.js";
 import { formatBytes, formatRelativeDate, parseMB } from "./lib/vaultFormat.js";
 import { ALL_TAGS, inferTagGuess, inferTagForNote } from "./lib/vaultTags.js";
 import { mergeDocs, buildCombinedIndexText, supportsDirectoryPicker } from "./lib/vaultDocs.js";
@@ -1129,6 +1129,30 @@ export default function Silo({ onOpenLists }) {
     }
   }, [passphraseModal, vaultPassphrase, rewrapAllVaultText, showToast]);
 
+  const handleClearSemanticIndex = useCallback(async () => {
+    const vault = vaultRef.current;
+    if (!vault) {
+      showToast("No vault");
+      return;
+    }
+    setIngestBusy(true);
+    try {
+      const entries = await loadManifest(vault);
+      await clearAllEmbeddingsForVault(vault);
+      setEmbeddingsById((prev) => {
+        const next = { ...prev };
+        for (const e of entries) delete next[String(e.id)];
+        return next;
+      });
+      showToast("Semantic embeddings cleared");
+    } catch (e) {
+      console.error(e);
+      showToast("Could not clear embeddings");
+    } finally {
+      setIngestBusy(false);
+    }
+  }, [showToast]);
+
   const settingsActions = useMemo(() => [
     {
       id: "lists",
@@ -1277,30 +1301,6 @@ export default function Silo({ onOpenLists }) {
     } catch (err) {
       console.error(err);
       showToast(err?.message || "Could not delete item.");
-    }
-  }, [showToast]);
-
-  const handleClearSemanticIndex = useCallback(async () => {
-    const vault = vaultRef.current;
-    if (!vault) {
-      showToast("No vault");
-      return;
-    }
-    setIngestBusy(true);
-    try {
-      const entries = await loadManifest(vault);
-      await clearAllEmbeddingsForVault(vault);
-      setEmbeddingsById((prev) => {
-        const next = { ...prev };
-        for (const e of entries) delete next[String(e.id)];
-        return next;
-      });
-      showToast("Semantic embeddings cleared");
-    } catch (e) {
-      console.error(e);
-      showToast("Could not clear embeddings");
-    } finally {
-      setIngestBusy(false);
     }
   }, [showToast]);
 
@@ -1520,6 +1520,22 @@ export default function Silo({ onOpenLists }) {
     if (previewDoc && !docs.some((d) => d.id === previewDoc.id)) setPreviewDoc(null);
   }, [docs, previewDoc]);
 
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setMobileTab("search");
+        window.setTimeout(() => document.getElementById("silo-global-search")?.focus(), 40);
+      }
+      if (e.key === "Escape" && query.trim()) {
+        setQuery("");
+        setQueryVec(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [query, setQueryVec]);
+
   return (
     <div className="app-shell silo-app-shell">
       {vaultUnlockGate && opfsReady && (
@@ -1566,10 +1582,10 @@ export default function Silo({ onOpenLists }) {
 
       <ConfirmDialog
         open={confirmDeleteDoc != null}
-        title="Delete this document?"
+        title={confirmDeleteDoc ? `Delete “${confirmDeleteDoc.name}”?` : "Delete item?"}
         body={
           confirmDeleteDoc
-            ? `“${confirmDeleteDoc.name}” will be removed from the vault. This cannot be undone.`
+            ? "This removes the file and its search index from this device. This cannot be undone unless you have a backup."
             : ""
         }
         confirmLabel="Delete"
@@ -1612,6 +1628,17 @@ export default function Silo({ onOpenLists }) {
           tags={ALL_TAGS}
           activeTag={activeTag}
           smartView={smartView}
+          activeTab={mobileTab}
+          storageLabel={vaultStatusLabel}
+          backupLabel={lastBackupExport ? `Last backup ${lastBackupExport}` : "No backup yet"}
+          onTab={(id) => {
+            if (id === "add") {
+              setIngestDialogOpen(true);
+              return;
+            }
+            setMobileTab(id);
+            bumpMeaningfulInteraction();
+          }}
           onTag={(t) => {
             setActiveTag(t);
             bumpMeaningfulInteraction();
@@ -1625,6 +1652,7 @@ export default function Silo({ onOpenLists }) {
             setSettingsOpen(true);
             bumpMeaningfulInteraction();
           }}
+          onOpenLists={onOpenLists}
         />
       </div>
 
@@ -1671,52 +1699,6 @@ export default function Silo({ onOpenLists }) {
             <Banner variant="warning">{ingestError}</Banner>
           )}
 
-          <div className="vault-topbar">
-            <div className="vault-brand-row">
-              <img
-                src={APP_ICON_SRC}
-                alt=""
-                width={36}
-                height={36}
-                style={{ borderRadius: 10, flexShrink: 0, objectFit: "contain" }}
-              />
-              <div style={{ minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span className="vault-brand-mark">SILO</span>
-                  <span
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: "50%",
-                      background: opfsReady ? "var(--color-success)" : "var(--color-text-muted)",
-                      boxShadow: opfsReady ? "0 0 8px color-mix(in srgb, var(--color-success) 50%, transparent)" : "none",
-                      flexShrink: 0,
-                    }}
-                    title={vaultStatusLabel}
-                    aria-hidden
-                  />
-                </div>
-                <div className="vault-brand-meta">
-                  {docs.length} items · {totalGB} GB
-                </div>
-              </div>
-            </div>
-            <button
-              className="icon-btn"
-              onClick={() => {
-                setSettingsOpen(true);
-                bumpMeaningfulInteraction();
-              }}
-              aria-label="Open settings"
-              type="button"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
-            </button>
-          </div>
-
           <div className={`home-screen-view ${showHomePanel ? "home-screen-view--active" : ""}`}>
             <HomeScreen
               docs={docs}
@@ -1739,7 +1721,30 @@ export default function Silo({ onOpenLists }) {
               }}
               onOpenLists={onOpenLists}
               onCollection={(name) => {
-                setActiveTag(name);
+                if (name === "Needs backup") {
+                  setSettingsOpen(true);
+                  void handleExportVaultZip();
+                  return;
+                }
+                if (name === "All") {
+                  setActiveTag("All");
+                  setSmartView("");
+                } else if (name === "Recent" || name === "Voice" || name === "Screenshots") {
+                  setSmartView(name === "Recent" ? "Recent" : name);
+                  setActiveTag("All");
+                } else if (["Identity", "Finance", "Housing"].includes(name)) {
+                  setActiveTag(name);
+                  setSmartView("");
+                } else if (name === "PDFs" || name === "Images" || name === "Notes") {
+                  setMobileTab("search");
+                  setSearchFilter(name === "PDFs" ? "PDF" : name === "Images" ? "Images" : "Notes");
+                  setActiveTag("All");
+                  setSmartView("");
+                  return;
+                } else {
+                  setActiveTag(name);
+                  setSmartView("");
+                }
                 setMobileTab("vault");
               }}
             />
@@ -1764,6 +1769,11 @@ export default function Silo({ onOpenLists }) {
               onPointerCancel={handlePointerCancel}
               onSwipeDelete={(d) => setConfirmDeleteDoc(d)}
               onCardKeyDown={handleCardKeyDown}
+              onAddNote={() => setNoteModalOpen(true)}
+              onClearSearch={() => {
+                setQuery("");
+                setQueryVec(null);
+              }}
             />
           </div>
 
@@ -1771,6 +1781,10 @@ export default function Silo({ onOpenLists }) {
           <VaultScreen
             itemCount={docs.length}
             totalGB={totalGB}
+            vaultStatusLabel={vaultStatusLabel}
+            backupLabel={lastBackupExport ? `Last backup ${lastBackupExport}` : "No backup yet"}
+            passphraseSet={!!vaultPassphrase}
+            indexReady={!vaultListLoading}
             tags={ALL_TAGS}
             activeTag={activeTag}
             onTag={(t) => {
@@ -1810,6 +1824,7 @@ export default function Silo({ onOpenLists }) {
           />
           </div>
 
+        {showVaultPanel && (
         <div className="search-dock">
           <SearchBar
             value={query}
@@ -1817,15 +1832,16 @@ export default function Silo({ onOpenLists }) {
             isSearching={embeddingSearchBusy && !!query.trim()}
             semanticReady={!semanticSearchEnabled || embeddingModelReady}
             semanticLabel={semanticSearchEnabled ? (embeddingModelReady ? "Semantic ✓" : "Loading AI…") : ""}
-            placeholder="Search vault…"
+            placeholder="Search files, notes, text, screenshots…"
             resultCount={searchResultCount}
             onBlur={handleSearchBlur}
           />
         </div>
+        )}
       </div>
       </div>
 
-      <div className="app-shell__preview">
+      <div className={`app-shell__preview ${previewDoc ? "app-shell__preview--open" : ""}`}>
         <PreviewPanel
           doc={previewDoc}
           onOpen={(d) => { void handleOpenDoc(d); }}
@@ -1838,6 +1854,7 @@ export default function Silo({ onOpenLists }) {
 
       <BottomNav
         activeTab={mobileTab}
+        badgeCount={importQueueCount}
         onTabChange={(id) => {
           setMobileTab(id);
           bumpMeaningfulInteraction();

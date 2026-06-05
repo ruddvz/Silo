@@ -1,18 +1,15 @@
 {
   "id": "/",
-  "name": "Silo — Private Vault",
+  "name": "Silo",
   "short_name": "Silo",
-  "description": "Your local-first, private document vault.",
+  "description": "Private local-first vault for files, notes, screenshots, and voice memos.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["standalone", "minimal-ui", "window-controls-overlay"],
-  "edge_side_panel": {
-    "preferred_width": 420
-  },
+  "display_override": ["standalone", "minimal-ui", "browser"],
   "orientation": "portrait-primary",
-  "background_color": "#0f0f10",
-  "theme_color": "#0f0f10",
+  "background_color": "#f4f7fb",
+  "theme_color": "#f4f7fb",
   "categories": ["productivity", "utilities"],
   "dir": "ltr",
   "lang": "en",
@@ -40,26 +37,6 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
-    },
-    {
-      "src": "/icons/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
-    }
-  ],
-  "screenshots": [
-    {
-      "src": "/screenshots/desktop.png",
-      "sizes": "1280x800",
-      "type": "image/png",
-      "form_factor": "wide"
-    },
-    {
-      "src": "/screenshots/mobile.png",
-      "sizes": "390x844",
-      "type": "image/png",
-      "form_factor": "narrow"
     }
   ],
   "share_target": {
@@ -73,21 +50,9 @@
       "files": [
         {
           "name": "files",
-          "accept": ["application/pdf", "image/*", "audio/*", "text/*", "video/*", "*/*"]
+          "accept": ["application/pdf", "image/*", "audio/*", "text/*"]
         }
       ]
     }
-  },
-  "file_handlers": [
-    {
-      "action": "/",
-      "accept": {
-        "application/pdf": [".pdf"],
-        "image/*": [".jpg", ".jpeg", ".png", ".webp", ".gif"],
-        "audio/*": [".mp3", ".m4a", ".wav", ".ogg"],
-        "text/plain": [".txt", ".md"]
-      }
-    }
-  ],
-  "handle_links": "preferred"
+  }
 }

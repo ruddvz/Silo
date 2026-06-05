@@ -17,6 +17,15 @@ export default function App() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  if (route === "lists") return <ListsApp />;
+  if (route === "lists") {
+    return (
+      <ListsApp
+        onBackToVault={() => {
+          window.location.hash = "";
+          setRoute("vault");
+        }}
+      />
+    );
+  }
   return <Silo onOpenLists={() => { window.location.hash = "lists"; setRoute("lists"); }} />;
 }

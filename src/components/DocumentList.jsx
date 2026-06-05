@@ -14,6 +14,7 @@ import { explainSearchMatch } from "../lib/searchExplain.js";
  *   onPointerCancel: () => void,
  *   onCardKeyDown: (doc: object, e: import('react').KeyboardEvent) => void,
  *   onSwipeDelete?: (doc: object) => void,
+ *   cardVariant?: "compact" | "comfortable" | "searchResult" | "desktopRow",
  * }} props
  */
 export function DocumentList({
@@ -26,6 +27,7 @@ export function DocumentList({
   onPointerCancel,
   onCardKeyDown,
   onSwipeDelete,
+  cardVariant = "comfortable",
 }) {
   const parentRef = useRef(null);
   const touchRef = useRef(/** @type {{ id: string|number, x: number } | null} */ (null));
@@ -97,6 +99,7 @@ export function DocumentList({
                 >
                   <DocumentCard
                     doc={row.doc}
+                    variant={cardVariant}
                     query={query}
                     snippet={query.trim() ? (contentById[row.doc.id] ?? "").slice(0, 160) : ""}
                     matchReason={query.trim() ? explainSearchMatch(row.doc, query, contentById[row.doc.id]) : null}

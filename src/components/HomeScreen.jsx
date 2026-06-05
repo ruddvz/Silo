@@ -5,7 +5,20 @@ import { Chip } from "./ui/Chip.jsx";
 import { Button } from "./ui/Button.jsx";
 import { IconSearch } from "./ui/icons.jsx";
 
-const SMART_COLLECTIONS = ["Identity", "Finance", "Housing", "Voice", "Screenshots"];
+const SMART_COLLECTIONS = [
+  "All",
+  "Recent",
+  "Identity",
+  "Finance",
+  "Housing",
+  "Voice",
+  "Screenshots",
+  "Images",
+  "PDFs",
+  "Notes",
+  "Large files",
+  "Needs backup",
+];
 
 /**
  * @param {{
@@ -53,106 +66,129 @@ export function HomeScreen({
 
   return (
     <div className="home-screen">
-      <div className="home-screen__left">
-        <section className="home-status-card" aria-label="Vault status">
-          <h2 className="home-status-card__title">
-            {backupRecommended ? "Backup recommended" : vaultStatusLabel}
-          </h2>
-          <p className="home-status-card__meta">{vaultMeta}</p>
-          {backupRecommended && (
-            <Button variant="secondary" size="sm" onClick={onBackup}>
-              Back up now
-            </Button>
-          )}
-        </section>
-
-        <div className="home-search-entry">
-          <button type="button" className="home-search-entry__btn" onClick={onSearch}>
-            <IconSearch size={18} />
-            Search anything in Silo
-          </button>
+      <section className="home-status-card" aria-label="Vault status">
+        <div className="home-status-card__pill">{vaultStatusLabel}</div>
+        <h2 className="home-status-card__title">Your private vault</h2>
+        <p className="home-status-card__body">
+          {docs.length === 0
+            ? "Save your first file, note, photo, or voice memo. Silo keeps it searchable on this device."
+            : `${docs.length} items indexed locally. ${backupRecommended ? "Consider backing up soon." : vaultMeta.split("·").slice(1).join("·").trim() || "Everything stays on this device."}`}
+        </p>
+        {backupRecommended && (
+          <Button variant="secondary" size="sm" onClick={onBackup}>
+            Back up now
+          </Button>
+        )}
+        <div className="home-status-card__stats">
+          <div className="home-status-card__stat">
+            <span className="home-status-card__stat-value">{docs.length}</span>
+            <span className="home-status-card__stat-label">Items</span>
+          </div>
+          <div className="home-status-card__stat">
+            <span className="home-status-card__stat-value">{Object.keys(contentById).length}</span>
+            <span className="home-status-card__stat-label">Indexed</span>
+          </div>
+          <div className="home-status-card__stat">
+            <span className="home-status-card__stat-value">{backupRecommended ? "None" : "Saved"}</span>
+            <span className="home-status-card__stat-label">Backup</span>
+          </div>
         </div>
+      </section>
 
-        <QuickCaptureCard
-          disabled={ingestBusy}
-          onAddFile={onAddFile}
-          onAddPhoto={onAddPhoto}
-          onAddNote={onAddNote}
-          onAddVoice={onAddVoice}
-        />
+      <QuickCaptureCard
+        disabled={ingestBusy}
+        onAddFile={onAddFile}
+        onAddPhoto={onAddPhoto}
+        onAddNote={onAddNote}
+        onAddVoice={onAddVoice}
+      />
+
+      <div className="home-search-entry">
+        <button type="button" className="home-search-entry__btn" onClick={onSearch}>
+          <IconSearch size={20} />
+          <span className="home-search-entry__text">Search files, notes, text, screenshots…</span>
+          <span className="home-search-entry__kbd" aria-hidden>
+            ⌘K
+          </span>
+        </button>
       </div>
 
-      <div className="home-screen__right">
-        {needsAttention.length > 0 && (
-          <section className="home-screen__section" aria-label="Needs attention">
-            <SectionHeader title="Needs attention" />
-            <ul className="home-screen__attention">
-              {needsAttention.map((item) => (
-                <li key={item.label}>
-                  {item.action ? (
-                    <button type="button" className="home-screen__attention-btn" onClick={item.action}>
-                      {item.label}
-                    </button>
-                  ) : (
-                    <span>{item.label}</span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
+      <section className="home-screen__section" aria-label="Smart collections">
+        <SectionHeader title="Smart collections" />
+        <div className="home-collections home-collections--scroll">
+          {SMART_COLLECTIONS.map((name) => (
+            <Chip key={name} onClick={() => onCollection?.(name)}>
+              {name}
+            </Chip>
+          ))}
+        </div>
+      </section>
 
-        <section className="home-screen__section" aria-label="Recent saves">
-          <SectionHeader
-            title="Recent saves"
-            action={
-              docs.length > 5 ? (
-                <button type="button" className="home-screen__link" onClick={onViewAll}>
-                  View all
-                </button>
-              ) : null
-            }
-          />
-          {recent.length === 0 ? (
-            <p className="home-screen__empty">Your vault is empty. Add your first file, note, or voice memo above.</p>
-          ) : (
-            <div className="home-screen__recent">
-              {recent.map((doc) => (
-                <DocumentCard
-                  key={doc.id}
-                  doc={doc}
-                  query=""
-                  snippet={(contentById[doc.id] || "").slice(0, 120)}
-                  onActivate={onOpenDoc}
-                />
-              ))}
-            </div>
-          )}
+      {needsAttention.length > 0 && (
+        <section className="home-screen__section" aria-label="Needs attention">
+          <SectionHeader title="Needs attention" />
+          <ul className="home-screen__attention">
+            {needsAttention.map((item) => (
+              <li key={item.label}>
+                {item.action ? (
+                  <button type="button" className="home-screen__attention-btn" onClick={item.action}>
+                    {item.label}
+                  </button>
+                ) : (
+                  <span>{item.label}</span>
+                )}
+              </li>
+            ))}
+          </ul>
         </section>
+      )}
 
-        <section className="home-screen__section" aria-label="Smart collections">
-          <SectionHeader title="Smart collections" />
-          <div className="home-collections">
-            {SMART_COLLECTIONS.map((name) => (
-              <Chip key={name} onClick={() => onCollection?.(name)}>
-                {name}
-              </Chip>
+      <section className="home-screen__section" aria-label="Recent items">
+        <SectionHeader
+          title="Recent items"
+          action={
+            docs.length > 5 ? (
+              <button type="button" className="home-screen__link" onClick={onViewAll}>
+                View all
+              </button>
+            ) : null
+          }
+        />
+        {recent.length === 0 ? (
+          <p className="home-screen__empty">
+            Add a file, screenshot, note, or voice memo. Silo will keep it searchable on this device.
+          </p>
+        ) : (
+          <div className="home-screen__recent">
+            {recent.map((doc) => (
+              <DocumentCard
+                key={doc.id}
+                doc={doc}
+                variant="compact"
+                query=""
+                snippet={(contentById[doc.id] || "").slice(0, 80)}
+                onActivate={onOpenDoc}
+              />
             ))}
           </div>
-        </section>
-
-        {onOpenLists && (
-          <section className="shared-lists-card" aria-label="Shared lists">
-            <h3 className="shared-lists-card__title">Shared lists</h3>
-            <p className="shared-lists-card__body">
-              Create a small checklist with someone you trust. Your private vault stays local unless you explicitly share something.
-            </p>
-            <Button variant="secondary" size="sm" onClick={onOpenLists}>
-              Open shared lists
-            </Button>
-          </section>
         )}
-      </div>
+      </section>
+
+      <section className="home-privacy-note" aria-label="Privacy">
+        <p>Files, notes, screenshots, and voice memos stay on this device. No account required.</p>
+      </section>
+
+      {onOpenLists && (
+        <section className="shared-lists-card" aria-label="Shared lists">
+          <h3 className="shared-lists-card__title">Shared lists</h3>
+          <p className="shared-lists-card__body">
+            Create a small checklist with someone you trust. Your private vault stays local unless you explicitly share something.
+          </p>
+          <Button variant="secondary" size="sm" onClick={onOpenLists}>
+            Open shared lists
+          </Button>
+        </section>
+      )}
     </div>
   );
 }

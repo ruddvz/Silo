@@ -3,11 +3,16 @@ import { EmptyState } from "../components/EmptyState.jsx";
 import { VaultSkeletonList } from "../components/VaultSkeletonList.jsx";
 import { Chip } from "../components/ui/Chip.jsx";
 import { SectionHeader } from "../components/ui/SectionHeader.jsx";
+import { IconVault, IconShield, IconSearch, IconFile } from "../components/ui/icons.jsx";
 
 /**
  * @param {{
  *   itemCount: number,
  *   totalGB: string,
+ *   vaultStatusLabel?: string,
+ *   backupLabel?: string,
+ *   passphraseSet?: boolean,
+ *   indexReady?: boolean,
  *   tags: string[],
  *   activeTag: string,
  *   onTag: (tag: string) => void,
@@ -30,6 +35,10 @@ import { SectionHeader } from "../components/ui/SectionHeader.jsx";
 export function VaultScreen({
   itemCount,
   totalGB,
+  vaultStatusLabel = "Private on this device",
+  backupLabel = "No backup yet",
+  passphraseSet = false,
+  indexReady = true,
   tags,
   activeTag,
   onTag,
@@ -52,14 +61,39 @@ export function VaultScreen({
     <div className="vault-screen">
       <SectionHeader
         title="Vault"
+        subtitle={`${itemCount} items · ${vaultStatusLabel}`}
         action={
           <button type="button" className="ui-button ui-button--secondary ui-button--sm" disabled={ingestBusy} onClick={onOpenCapture}>
             Add
           </button>
         }
       />
+
+      <div className="vault-screen__status-grid">
+        <div className="vault-mini-card">
+          <IconVault size={24} className="vault-mini-card__icon" />
+          <span className="vault-mini-card__value">{vaultStatusLabel}</span>
+          <span className="vault-mini-card__label">Local storage</span>
+        </div>
+        <div className="vault-mini-card">
+          <IconFile size={24} className="vault-mini-card__icon" />
+          <span className="vault-mini-card__value">{backupLabel}</span>
+          <span className="vault-mini-card__label">Backup</span>
+        </div>
+        <div className="vault-mini-card">
+          <IconShield size={24} className="vault-mini-card__icon" />
+          <span className="vault-mini-card__value">{passphraseSet ? "Set" : "Off"}</span>
+          <span className="vault-mini-card__label">Passphrase</span>
+        </div>
+        <div className="vault-mini-card">
+          <IconSearch size={24} className="vault-mini-card__icon" />
+          <span className="vault-mini-card__value">{indexReady ? "Ready" : "Building…"}</span>
+          <span className="vault-mini-card__label">Search index</span>
+        </div>
+      </div>
+
       <p className="vault-screen__summary">
-        {itemCount} items · {totalGB} GB
+        {itemCount} items · {totalGB} GB total
       </p>
 
       <div className="vault-screen__chips" role="toolbar" aria-label="Categories">
@@ -85,6 +119,7 @@ export function VaultScreen({
             display={display}
             query={query}
             contentById={contentById}
+            cardVariant="comfortable"
             onDocOpen={onDocOpen}
             onPointerDown={onPointerDown}
             onPointerUp={onPointerUp}

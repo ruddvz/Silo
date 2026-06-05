@@ -1,12 +1,12 @@
+import { useMemo } from "react";
 import { SearchBar } from "../components/SearchBar.jsx";
 import { DocumentList } from "../components/DocumentList.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { VaultSkeletonList } from "../components/VaultSkeletonList.jsx";
 import { Chip } from "../components/ui/Chip.jsx";
-import { SectionHeader } from "../components/ui/SectionHeader.jsx";
 
-const SUGGESTIONS = ["passport", "rent", "bank", "screenshots"];
-const FILTERS = ["All", "PDFs", "Images", "Notes", "Audio"];
+const SUGGESTIONS = ["passport", "rent", "bank", "screenshots", "voice memo"];
+const FILTERS = ["All", "PDF", "Images", "Notes", "Voice", "Identity", "Finance", "Housing", "Local", "Linked", "Encrypted"];
 
 /**
  * @param {{
@@ -15,7 +15,6 @@ const FILTERS = ["All", "PDFs", "Images", "Notes", "Audio"];
  *   onSearchBlur: () => void,
  *   display: Record<string, object>,
  *   contentById: Record<string, string>,
- *   hasResults: boolean,
  *   vaultListLoading: boolean,
  *   embeddingSearchBusy: boolean,
  *   semanticSearchEnabled: boolean,
@@ -28,6 +27,8 @@ const FILTERS = ["All", "PDFs", "Images", "Notes", "Audio"];
  *   onPointerCancel: () => void,
  *   onSwipeDelete: (doc: object) => void,
  *   onCardKeyDown: (doc: object, e: import('react').KeyboardEvent) => void,
+ *   onAddNote?: () => void,
+ *   onClearSearch?: () => void,
  * }} props
  */
 export function SearchScreen({
@@ -48,38 +49,64 @@ export function SearchScreen({
   onPointerCancel,
   onSwipeDelete,
   onCardKeyDown,
+  onAddNote,
+  onClearSearch,
 }) {
-  const items = Object.values(display);
+  const items = useMemo(() => Object.values(display).flat(), [display]);
 
   const filtered = items.filter((doc) => {
     if (searchFilter === "All") return true;
     const k = doc.kind || "file";
-    if (searchFilter === "PDFs") return k === "pdf";
+    if (searchFilter === "PDF") return k === "pdf";
     if (searchFilter === "Images") return k === "image";
     if (searchFilter === "Notes") return k === "text" || k === "note";
-    if (searchFilter === "Audio") return k === "audio";
+    if (searchFilter === "Voice") return k === "audio";
+    if (searchFilter === "Identity") return doc.tag === "Identity";
+    if (searchFilter === "Finance") return doc.tag === "Finance";
+    if (searchFilter === "Housing") return doc.tag === "Housing";
+    if (searchFilter === "Local") return doc.storage !== "linked";
+    if (searchFilter === "Linked") return doc.storage === "linked";
+    if (searchFilter === "Encrypted") return doc.encrypted === true;
     return true;
   });
 
+  const groupedDisplay = useMemo(() => {
+    return filtered.reduce((acc, doc) => {
+      const tag = doc.tag || "Unsorted";
+      if (!acc[tag]) acc[tag] = [];
+      acc[tag].push(doc);
+      return acc;
+    }, /** @type {Record<string, object[]>} */ ({}));
+  }, [filtered]);
+
   return (
     <div className="search-screen">
-      <SectionHeader title="Search Silo" />
-      <SearchBar
-        value={query}
-        onChange={onQueryChange}
-        onBlur={onSearchBlur}
-        isSearching={embeddingSearchBusy && !!query.trim()}
-        semanticReady={!semanticSearchEnabled || embeddingModelReady}
-        semanticLabel={
-          semanticSearchEnabled
-            ? embeddingModelReady
-              ? "Semantic ✓"
-              : "Loading AI…"
-            : ""
-        }
-        placeholder="Search anything in Silo"
-        resultCount={query.trim() ? filtered.length : null}
-      />
+      <div className="search-screen__sticky">
+        <SearchBar
+          value={query}
+          onChange={onQueryChange}
+          onBlur={onSearchBlur}
+          isSearching={embeddingSearchBusy && !!query.trim()}
+          semanticReady={!semanticSearchEnabled || embeddingModelReady}
+          semanticLabel={
+            semanticSearchEnabled
+              ? embeddingModelReady
+                ? "Semantic ✓"
+                : "Preparing smart search…"
+              : "Keywords only"
+          }
+          placeholder="Search files, notes, text, screenshots…"
+          resultCount={query.trim() ? filtered.length : null}
+        />
+
+        <div className="search-screen__filters" role="toolbar" aria-label="Filter results">
+          {FILTERS.map((f) => (
+            <Chip key={f} active={searchFilter === f} onClick={() => onSearchFilter(f)}>
+              {f}
+            </Chip>
+          ))}
+        </div>
+      </div>
 
       {!query.trim() && (
         <div className="search-screen__suggestions" role="group" aria-label="Suggestions">
@@ -91,17 +118,15 @@ export function SearchScreen({
         </div>
       )}
 
-      <div className="search-screen__filters" role="toolbar" aria-label="Filter results">
-        {FILTERS.map((f) => (
-          <Chip key={f} active={searchFilter === f} onClick={() => onSearchFilter(f)}>
-            {f}
-          </Chip>
-        ))}
-      </div>
-
-      {!semanticSearchEnabled || embeddingModelReady ? null : (
+      {semanticSearchEnabled && !embeddingModelReady && (
         <p className="search-screen__hint" role="status">
-          Semantic search is getting ready. Filename and text search still work now.
+          Preparing smart search… Filename and text search still work now.
+        </p>
+      )}
+
+      {query.trim() && !vaultListLoading && (
+        <p className="search-screen__count" role="status">
+          {filtered.length} result{filtered.length === 1 ? "" : "s"}
         </p>
       )}
 
@@ -109,14 +134,21 @@ export function SearchScreen({
         {vaultListLoading ? (
           <VaultSkeletonList rows={6} />
         ) : !query.trim() ? (
-          <EmptyState variant="search-idle" onAction={() => {}} />
+          <EmptyState variant="search-idle" />
         ) : filtered.length === 0 ? (
-          <EmptyState variant="search" onAction={() => {}} />
+          <EmptyState
+            variant="search"
+            onAction={(action) => {
+              if (action === "clear") onClearSearch?.();
+              if (action === "note") onAddNote?.();
+            }}
+          />
         ) : (
           <DocumentList
-            display={Object.fromEntries(filtered.map((d) => [d.id, d]))}
+            display={groupedDisplay}
             query={query}
             contentById={contentById}
+            cardVariant="searchResult"
             onDocOpen={onDocOpen}
             onPointerDown={onPointerDown}
             onPointerUp={onPointerUp}

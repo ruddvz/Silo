@@ -1,56 +1,121 @@
-/* Silo OS — design tokens (iOS PWA first) */
+/* Silo iOS PWA design tokens */
 
 :root {
-  color-scheme: dark;
+  color-scheme: light dark;
 
-  /* Silo OS palette */
-  --silo-bg: #090b0f;
-  --silo-bg-2: #0d1016;
-  --silo-bg-3: #111620;
+  --silo-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", Inter, system-ui, sans-serif;
 
-  --silo-surface: rgba(255, 255, 255, 0.06);
-  --silo-surface-2: rgba(255, 255, 255, 0.085);
-  --silo-surface-3: rgba(255, 255, 255, 0.12);
-  --silo-surface-solid: #171b23;
-  --silo-surface-elevated: #1d232e;
+  --silo-bg: #f4f7fb;
+  --silo-bg-2: #eef3f9;
+  --silo-surface: rgba(255, 255, 255, 0.86);
+  --silo-surface-solid: #ffffff;
+  --silo-surface-raised: rgba(255, 255, 255, 0.94);
+  --silo-card: rgba(255, 255, 255, 0.78);
+  --silo-card-strong: #ffffff;
+  --silo-line: rgba(16, 24, 40, 0.10);
+  --silo-line-strong: rgba(16, 24, 40, 0.16);
 
-  --silo-line: rgba(255, 255, 255, 0.09);
-  --silo-line-strong: rgba(255, 255, 255, 0.16);
+  --silo-ink: #07111f;
+  --silo-ink-2: #172033;
+  --silo-muted: #667085;
+  --silo-muted-2: #98a2b3;
 
-  --silo-text: #f6f4ef;
-  --silo-text-2: #d8d3c8;
-  --silo-text-3: #a7a095;
-  --silo-text-4: #706c65;
+  --silo-accent: #4f6df5;
+  --silo-accent-2: #6f5df6;
+  --silo-accent-soft: rgba(79, 109, 245, 0.12);
+  --silo-accent-soft-2: rgba(111, 93, 246, 0.12);
 
-  --silo-accent: #d6a84f;
-  --silo-accent-2: #f0c86e;
-  --silo-accent-soft: rgba(214, 168, 79, 0.16);
-  --silo-accent-line: rgba(214, 168, 79, 0.34);
+  --silo-success: #0b8f61;
+  --silo-success-soft: rgba(11, 143, 97, 0.12);
+  --silo-warning: #b7791f;
+  --silo-warning-soft: rgba(183, 121, 31, 0.14);
+  --silo-danger: #d92d20;
+  --silo-danger-soft: rgba(217, 45, 32, 0.12);
+  --silo-info: #2563eb;
+  --silo-info-soft: rgba(37, 99, 235, 0.12);
 
-  --silo-cyan: #78d8d2;
-  --silo-cyan-soft: rgba(120, 216, 210, 0.14);
+  --silo-radius-xs: 10px;
+  --silo-radius-sm: 14px;
+  --silo-radius-md: 18px;
+  --silo-radius-lg: 22px;
+  --silo-radius-xl: 28px;
+  --silo-radius-2xl: 34px;
+  --silo-radius-pill: 999px;
 
-  --silo-success: #75d68f;
-  --silo-success-soft: rgba(117, 214, 143, 0.14);
+  --silo-space-1: 4px;
+  --silo-space-2: 8px;
+  --silo-space-3: 12px;
+  --silo-space-4: 16px;
+  --silo-space-5: 20px;
+  --silo-space-6: 24px;
+  --silo-space-7: 28px;
+  --silo-space-8: 32px;
+  --silo-space-10: 40px;
+  --silo-space-12: 48px;
 
-  --silo-warning: #e5b460;
-  --silo-warning-soft: rgba(229, 180, 96, 0.14);
+  --silo-topbar-h: 72px;
+  --silo-bottom-nav-h: 82px;
+  --silo-mobile-pad-x: 16px;
+  --silo-desktop-pad-x: 28px;
+  --silo-sidebar-w: 284px;
+  --silo-preview-w: 420px;
 
-  --silo-danger: #ff7a90;
-  --silo-danger-soft: rgba(255, 122, 144, 0.14);
+  --silo-shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.06);
+  --silo-shadow-md: 0 10px 30px rgba(15, 23, 42, 0.10);
+  --silo-shadow-lg: 0 24px 70px rgba(15, 23, 42, 0.16);
+  --silo-shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 
-  --silo-info: #8cb7ff;
-  --silo-info-soft: rgba(140, 183, 255, 0.14);
+  --silo-blur: blur(24px) saturate(150%);
+  --silo-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --silo-fast: 140ms;
+  --silo-med: 220ms;
+  --silo-slow: 360ms;
 
-  /* Legacy aliases (existing components) */
+  --type-display: 700 34px/1.05 var(--silo-font);
+  --type-title-1: 700 28px/1.12 var(--silo-font);
+  --type-title-2: 700 22px/1.16 var(--silo-font);
+  --type-title-3: 650 19px/1.22 var(--silo-font);
+  --type-body: 400 16px/1.45 var(--silo-font);
+  --type-body-strong: 650 16px/1.45 var(--silo-font);
+  --type-callout: 500 15px/1.35 var(--silo-font);
+  --type-footnote: 500 13px/1.32 var(--silo-font);
+  --type-caption: 550 12px/1.25 var(--silo-font);
+  --type-micro: 650 11px/1.18 var(--silo-font);
+
+  --bp-mobile-max: 767px;
+  --bp-tablet: 768px;
+  --bp-desktop: 1024px;
+  --bp-wide: 1280px;
+
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-header: 20;
+  --z-nav: 30;
+  --z-overlay: 40;
+  --z-sheet: 50;
+  --z-modal: 60;
+  --z-toast: 70;
+
+  /* Legacy aliases */
+  --silo-text: var(--silo-ink);
+  --silo-text-2: var(--silo-ink-2);
+  --silo-text-3: var(--silo-muted);
+  --silo-text-4: var(--silo-muted-2);
+  --silo-surface-2: var(--silo-surface-raised);
+  --silo-surface-3: var(--silo-card-strong);
+  --silo-surface-elevated: var(--silo-surface-raised);
+  --silo-accent-line: var(--silo-accent-soft);
+  --silo-cyan: var(--silo-info);
+  --silo-cyan-soft: var(--silo-info-soft);
+
   --color-bg: var(--silo-bg);
   --color-surface: var(--silo-surface-solid);
-  --color-surface-2: var(--silo-surface-elevated);
+  --color-surface-2: var(--silo-surface-raised);
   --color-border: var(--silo-line);
   --color-border-hover: var(--silo-line-strong);
-  --color-text-primary: var(--silo-text);
-  --color-text-secondary: var(--silo-text-3);
-  --color-text-muted: var(--silo-text-4);
+  --color-text-primary: var(--silo-ink);
+  --color-text-secondary: var(--silo-muted);
+  --color-text-muted: var(--silo-muted-2);
   --color-accent: var(--silo-accent);
   --color-accent-dim: var(--silo-accent-soft);
   --color-accent-hover: var(--silo-accent-2);
@@ -59,31 +124,20 @@
   --color-danger: var(--silo-danger);
   --color-info: var(--silo-info);
 
-  --cat-0: var(--silo-accent);
-  --cat-1: var(--silo-success);
-  --cat-2: var(--silo-warning);
-  --cat-3: var(--silo-danger);
-  --cat-4: var(--silo-info);
-  --cat-5: var(--silo-cyan);
-  --cat-6: #fb923c;
-  --cat-7: #a3e635;
-
-  /* Typography */
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", Inter, system-ui, sans-serif;
-  --font-display: "Instrument Serif", Georgia, serif;
-  --font-body: var(--font-sans);
+  --font-sans: var(--silo-font);
+  --font-body: var(--silo-font);
+  --font-display: var(--silo-font);
   --font-mono: "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace;
 
   --text-hero: 2.125rem;
-  --text-title-1: 1.875rem;
-  --text-title-2: 1.5rem;
-  --text-title-3: 1.25rem;
+  --text-title-1: 1.75rem;
+  --text-title-2: 1.375rem;
+  --text-title-3: 1.1875rem;
   --text-body: 1rem;
   --text-callout: 0.9375rem;
   --text-subhead: 0.875rem;
   --text-footnote: 0.8125rem;
   --text-caption: 0.75rem;
-
   --text-xs: var(--text-caption);
   --text-sm: var(--text-footnote);
   --text-base: var(--text-body);
@@ -96,88 +150,93 @@
   --weight-medium: 500;
   --weight-semibold: 600;
   --weight-bold: 700;
-
   --leading-tight: 1.25;
-  --leading-normal: 1.55;
+  --leading-normal: 1.45;
   --leading-relaxed: 1.75;
-
   --tracking-tight: -0.02em;
   --tracking-normal: 0;
   --tracking-wide: 0.04em;
   --tracking-widest: 0.12em;
 
-  /* Spacing */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-7: 28px;
-  --space-8: 32px;
-  --space-10: 40px;
-  --space-12: 48px;
+  --space-1: var(--silo-space-1);
+  --space-2: var(--silo-space-2);
+  --space-3: var(--silo-space-3);
+  --space-4: var(--silo-space-4);
+  --space-5: var(--silo-space-5);
+  --space-6: var(--silo-space-6);
+  --space-7: var(--silo-space-7);
+  --space-8: var(--silo-space-8);
+  --space-10: var(--silo-space-10);
+  --space-12: var(--silo-space-12);
   --space-16: 64px;
 
-  /* Radius */
-  --radius-xs: 10px;
-  --radius-sm: 14px;
-  --radius-md: 18px;
-  --radius-lg: 24px;
-  --radius-xl: 30px;
-  --radius-2xl: 36px;
-  --radius-pill: 999px;
-  --radius-full: var(--radius-pill);
+  --radius-xs: var(--silo-radius-xs);
+  --radius-sm: var(--silo-radius-sm);
+  --radius-md: var(--silo-radius-md);
+  --radius-lg: var(--silo-radius-lg);
+  --radius-xl: var(--silo-radius-xl);
+  --radius-2xl: var(--silo-radius-2xl);
+  --radius-pill: var(--silo-radius-pill);
+  --radius-full: var(--silo-radius-pill);
 
-  /* Shadows & glass */
-  --shadow-card: 0 16px 44px rgba(0, 0, 0, 0.26);
-  --shadow-sheet: 0 -24px 70px rgba(0, 0, 0, 0.42);
-  --shadow-nav: 0 18px 60px rgba(0, 0, 0, 0.42);
-  --glass-blur: blur(22px) saturate(150%);
+  --shadow-card: var(--silo-shadow-md);
+  --shadow-sheet: var(--silo-shadow-lg);
+  --shadow-nav: var(--silo-shadow-md);
+  --glass-blur: var(--silo-blur);
 
-  /* Motion */
-  --duration-fast: 120ms;
-  --duration-base: 180ms;
-  --duration-sheet: 260ms;
-  --ease-ios: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --duration-fast: var(--silo-fast);
+  --duration-base: var(--silo-med);
+  --duration-sheet: var(--silo-slow);
+  --ease-ios: var(--silo-ease);
 
-  /* Safe area & shell */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
-
-  --app-header-height: 64px;
-  --app-tabbar-height: 78px;
-  --app-horizontal-padding: 16px;
-
   --silo-safe-top: var(--safe-top);
   --silo-safe-bottom: var(--safe-bottom);
+
+  --app-header-height: var(--silo-topbar-h);
+  --app-tabbar-height: var(--silo-bottom-nav-h);
+  --app-horizontal-padding: var(--silo-mobile-pad-x);
 }
 
-:root[data-theme="light"] {
-  color-scheme: light;
+:root[data-theme="dark"] {
+  --silo-bg: #080b12;
+  --silo-bg-2: #0e1420;
+  --silo-surface: rgba(17, 24, 39, 0.78);
+  --silo-surface-solid: #101827;
+  --silo-surface-raised: rgba(22, 31, 48, 0.92);
+  --silo-card: rgba(18, 27, 42, 0.78);
+  --silo-card-strong: #121a29;
+  --silo-line: rgba(255, 255, 255, 0.10);
+  --silo-line-strong: rgba(255, 255, 255, 0.16);
+  --silo-ink: #f8fafc;
+  --silo-ink-2: #e5e7eb;
+  --silo-muted: #a1a8b5;
+  --silo-muted-2: #737c8c;
+  --silo-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.24);
+  --silo-shadow-md: 0 10px 30px rgba(0, 0, 0, 0.34);
+  --silo-shadow-lg: 0 24px 70px rgba(0, 0, 0, 0.48);
+}
 
-  --silo-bg: #f6f2ea;
-  --silo-bg-2: #fbf8f1;
-  --silo-bg-3: #ffffff;
-
-  --silo-surface: rgba(255, 255, 255, 0.72);
-  --silo-surface-2: rgba(255, 255, 255, 0.88);
-  --silo-surface-3: rgba(255, 255, 255, 0.96);
-  --silo-surface-solid: #ffffff;
-  --silo-surface-elevated: #ffffff;
-
-  --silo-line: rgba(26, 20, 12, 0.09);
-  --silo-line-strong: rgba(26, 20, 12, 0.16);
-
-  --silo-text: #16130e;
-  --silo-text-2: #3a342b;
-  --silo-text-3: #72685c;
-  --silo-text-4: #a09485;
-
-  --silo-accent: #9a6b18;
-  --silo-accent-2: #b88422;
-  --silo-accent-soft: rgba(154, 107, 24, 0.12);
-  --silo-accent-line: rgba(154, 107, 24, 0.26);
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --silo-bg: #080b12;
+    --silo-bg-2: #0e1420;
+    --silo-surface: rgba(17, 24, 39, 0.78);
+    --silo-surface-solid: #101827;
+    --silo-surface-raised: rgba(22, 31, 48, 0.92);
+    --silo-card: rgba(18, 27, 42, 0.78);
+    --silo-card-strong: #121a29;
+    --silo-line: rgba(255, 255, 255, 0.10);
+    --silo-line-strong: rgba(255, 255, 255, 0.16);
+    --silo-ink: #f8fafc;
+    --silo-ink-2: #e5e7eb;
+    --silo-muted: #a1a8b5;
+    --silo-muted-2: #737c8c;
+    --silo-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.24);
+    --silo-shadow-md: 0 10px 30px rgba(0, 0, 0, 0.34);
+    --silo-shadow-lg: 0 24px 70px rgba(0, 0, 0, 0.48);
+  }
 }
