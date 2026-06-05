@@ -20,9 +20,6 @@ import {
   removeLinkedFileHandle,
   clearAllLinkedFileHandles,
 } from "./vault/nativeFileHandles.js";
-import { buildVaultSearchIndex } from "./vault/searchIndex.js";
-import { topMatchingDocIds } from "./vault/vectorSearch.js";
-import { mergeSearchIds } from "./vault/hybridSearch.js";
 import {
   removePendingShare,
   getAllPendingShares,
@@ -35,8 +32,9 @@ import { buildVaultZip, parseVaultZip, applyVaultZipToOpfs } from "./vault/expor
 import { persistSecureText, decodeStoredText, isEncryptedStoredPayload, isPassphraseActive } from "./vault/secureText.js";
 import { sha256HexFromBlob } from "./vault/fileHash.js";
 import { textContentFingerprint } from "./vault/textFingerprint.js";
-import { checkVaultIntegrity } from "./vault/integrity.js";
+import { checkVaultHealth } from "./vault/health.js";
 import { repairVaultEntry } from "./vault/repair.js";
+import { VaultRecoveryScreen } from "./components/VaultRecoveryScreen.jsx";
 import { summarizeExtractive } from "./vault/summarize.js";
 import { SearchBar } from "./components/SearchBar.jsx";
 import { DocumentList } from "./components/DocumentList.jsx";
@@ -54,444 +52,30 @@ import { PreviewPanel } from "./components/PreviewPanel.jsx";
 import { SettingsDrawer } from "./components/SettingsDrawer.jsx";
 import { UnlockScreen } from "./components/UnlockScreen.jsx";
 import { PrivacyModal } from "./components/PrivacyModal.jsx";
+import { Toast } from "./components/Toast.jsx";
+import { RenameModal } from "./components/RenameModal.jsx";
+import { NoteModal } from "./components/NoteModal.jsx";
+import { ContextMenu } from "./components/ContextMenu.jsx";
 import { useStorageMode } from "./hooks/useStorageMode.js";
 import { usePWAInstall, bumpMeaningfulInteraction } from "./hooks/usePWAInstall.js";
+import { usePwaLifecycle } from "./hooks/usePwaLifecycle.js";
+import { UpdateAvailableBanner } from "./components/UpdateAvailableBanner.jsx";
+import { useVaultSearch } from "./hooks/useVaultSearch.js";
+import { APP_ICON_SRC, DEFAULT_VAULT_FILE_ACCEPT, VAULT_FILE_ACCEPT_BY_KIND } from "./lib/vaultConstants.js";
+import { formatBytes, formatRelativeDate, parseMB } from "./lib/vaultFormat.js";
+import { ALL_TAGS, inferTagGuess, inferTagForNote } from "./lib/vaultTags.js";
+import { mergeDocs, buildCombinedIndexText, SMART_VIEWS, supportsDirectoryPicker } from "./lib/vaultDocs.js";
+import {
+  SEED_DOCS,
+  DEMO_INDEX_BOOST,
+  DEMO_TEXT_BODY,
+  isDemoDataEnabled,
+  getInitialDemoDocs,
+  getInitialDemoContentById,
+} from "./data/demoVault.js";
+import { hasCompletedOnboarding, markOnboardingComplete } from "./lib/onboarding.js";
+import { OnboardingScreen } from "./components/OnboardingScreen.jsx";
 import "./silo-app.css";
-
-/** Same artwork as favicon / PWA manifest (`public/icons/icon.svg`) */
-const APP_ICON_SRC = `${import.meta.env.BASE_URL}icons/icon.svg`.replace(/\/{2,}/g, "/");
-
-const DEFAULT_VAULT_FILE_ACCEPT =
-  ".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.heic,.heif,.m4a,.aac,.mp3,.wav,.webm,.ogg,.opus,.flac,application/pdf,image/*,audio/*";
-
-/** @type {Record<string, string>} */
-const VAULT_FILE_ACCEPT_BY_KIND = {
-  pdf: ".pdf,application/pdf",
-  image: ".png,.jpg,.jpeg,.gif,.webp,.bmp,.heic,.heif,image/*",
-  audio: ".m4a,.aac,.mp3,.wav,.webm,.ogg,.opus,.flac,audio/*",
-  any: DEFAULT_VAULT_FILE_ACCEPT,
-};
-
-// ─── Data ────────────────────────────────────────────────────────────────────
-
-const SEED_DOCS = [
-  { id: 1,  name: "passport_scan.pdf",      tag: "Identity",  kind: "pdf",  date: "Mar 12, 2024", size: "2.1 MB",  source: "demo", createdAt: "2024-03-12T12:00:00.000Z" },
-  { id: 2,  name: "drivers_license.pdf",    tag: "Identity",  kind: "pdf",  date: "Jan 08, 2024", size: "980 KB", source: "demo", createdAt: "2024-01-08T12:00:00.000Z" },
-  { id: 11, name: "sincard.pdf",            tag: "Identity",  kind: "pdf",  date: "May 01, 2023", size: "150 KB", source: "demo", createdAt: "2023-05-01T12:00:00.000Z" },
-  { id: 3,  name: "hydro_bill_feb.pdf",     tag: "Utilities", kind: "pdf",  date: "Feb 28, 2024", size: "340 KB", source: "demo", createdAt: "2024-02-28T12:00:00.000Z" },
-  { id: 8,  name: "hydro_bill_jan.pdf",     tag: "Utilities", kind: "pdf",  date: "Jan 29, 2024", size: "310 KB", source: "demo", createdAt: "2024-01-29T12:00:00.000Z" },
-  { id: 4,  name: "lease_agreement.pdf",    tag: "Housing",   kind: "pdf",  date: "Sep 01, 2023", size: "4.8 MB", source: "demo", createdAt: "2023-09-01T12:00:00.000Z" },
-  { id: 12, name: "lease_renewal_2024.pdf", tag: "Housing",   kind: "pdf",  date: "Mar 15, 2024", size: "3.1 MB", source: "demo", createdAt: "2024-03-15T12:00:00.000Z" },
-  { id: 5,  name: "t4_2023.pdf",            tag: "Tax",       kind: "pdf",  date: "Feb 20, 2024", size: "1.2 MB", source: "demo", createdAt: "2024-02-20T12:00:00.000Z" },
-  { id: 9,  name: "bank_statement_mar.pdf", tag: "Finance",   kind: "pdf",  date: "Mar 31, 2024", size: "890 KB", source: "demo", createdAt: "2024-03-31T12:00:00.000Z" },
-  { id: 10, name: "void_cheque.pdf",        tag: "Finance",   kind: "pdf",  date: "Nov 10, 2023", size: "220 KB", source: "demo", createdAt: "2023-11-10T12:00:00.000Z" },
-  { id: 6,  name: "insurance_auto.pdf",     tag: "Insurance", kind: "pdf",  date: "Jan 15, 2024", size: "2.6 MB", source: "demo", createdAt: "2024-01-15T12:00:00.000Z" },
-  { id: 7,  name: "college_diploma.pdf",    tag: "Education", kind: "pdf",  date: "Jun 15, 2022", size: "5.3 MB", source: "demo", createdAt: "2022-06-15T12:00:00.000Z" },
-  {
-    id: 20,
-    name: "WhatsApp — rent reminder.txt",
-    tag: "Moments",
-    kind: "text",
-    date: "Apr 02, 2024",
-    size: "420 B",
-    source: "demo",
-    createdAt: "2024-04-02T18:30:00.000Z",
-  },
-];
-
-/** Extra phrases so demo search behaves more like semantic "concepts" */
-const DEMO_INDEX_BOOST = {
-  1: "passport travel identity citizenship",
-  2: "driver license driving permit identification",
-  11: "social insurance national identity card",
-  3: "hydro electricity utility bill power",
-  8: "hydro electricity utility bill power",
-  4: "lease rent housing apartment landlord",
-  12: "lease renewal housing rent",
-  5: "income tax t4 employment earnings",
-  9: "bank account statement finance",
-  10: "cheque checking account void finance",
-  6: "auto vehicle car insurance policy",
-  7: "university college degree diploma education",
-  20: "whatsapp message forwarded note self chat reminder landlord rent due april",
-};
-
-const TAG_META = {
-  Identity:  { color: "#C8963E", bg: "rgba(200,150,62,0.10)",  label: "ID"  },
-  Utilities: { color: "#5B9BD5", bg: "rgba(91,155,213,0.10)",  label: "UTL" },
-  Housing:   { color: "#6BBF7A", bg: "rgba(107,191,122,0.10)", label: "HSG" },
-  Tax:       { color: "#C86E8A", bg: "rgba(200,110,138,0.10)", label: "TAX" },
-  Finance:   { color: "#D4935A", bg: "rgba(212,147,90,0.10)",  label: "FIN" },
-  Insurance: { color: "#9B7EC8", bg: "rgba(155,126,200,0.10)", label: "INS" },
-  Education: { color: "#C8B43E", bg: "rgba(200,180,62,0.10)",  label: "EDU" },
-  Moments:   { color: "#5BC8C4", bg: "rgba(91,200,196,0.10)",  label: "MSG" },
-};
-
-const ALL_TAGS = ["All", ...Object.keys(TAG_META)];
-
-const DEMO_TEXT_BODY = {
-  20: "Hey — reminder rent is due April 5. E-transfer to the usual address. Thx!",
-};
-
-function buildCombinedIndexText(doc, content) {
-  const k = doc.kind || "pdf";
-  const base = `${doc.name} ${doc.tag} ${k}`;
-  return `${base} ${content || ""}`.trim();
-}
-
-function mergeDocs(seed, local) {
-  const byId = new Map();
-  for (const d of seed) byId.set(String(d.id), d);
-  for (const d of local) byId.set(String(d.id), d);
-  return Array.from(byId.values()).sort((a, b) => {
-    const ta = new Date(a.createdAt || 0).getTime();
-    const tb = new Date(b.createdAt || 0).getTime();
-    return tb - ta;
-  });
-}
-
-const SMART_VIEWS = [
-  { id: "Recent",    label: "Recent",    match: (d) => daysSince(d.createdAt) <= 7 },
-  { id: "Voice",     label: "Voice",     match: (d) => (d.kind || "") === "audio" },
-  { id: "Screenshots", label: "Shots",   match: (d, ctx) => (d.kind || "") === "image" || /screenshot|screen\s*shot/i.test(d.name + (ctx.contentById?.[d.id] || "")) },
-  { id: "LowOCR",    label: "Low OCR",   match: (d, ctx) => (d.kind || "") === "image" && String(ctx.contentById?.[d.id] || "").trim().length < 24 },
-  { id: "Duplicates", label: "Dupes",   match: (d, ctx) => d.source === "local" && ((d.contentHash && ctx.duplicateHashes?.has(d.contentHash)) || (d.textFingerprint && ctx.duplicateFingerprints?.has(d.textFingerprint))) },
-];
-
-function daysSince(iso) {
-  const t = new Date(iso || 0).getTime();
-  if (!Number.isFinite(t)) return 999;
-  return (Date.now() - t) / (86400 * 1000);
-}
-
-function supportsDirectoryPicker() {
-  return typeof window !== "undefined" && typeof window.showDirectoryPicker === "function";
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function parseMB(sizeStr) {
-  const n = parseFloat(sizeStr);
-  return sizeStr.includes("MB") ? n : n / 1024;
-}
-
-function formatBytes(n) {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatDate(iso) {
-  try {
-    return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
-}
-
-function formatRelativeDate(iso) {
-  try {
-    const d = new Date(iso);
-    const now = Date.now();
-    const diffSec = Math.round((d.getTime() - now) / 1000);
-    const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-    const abs = Math.abs(diffSec);
-    if (abs < 60) return rtf.format(0, "second");
-    if (abs < 3600) return rtf.format(Math.round(diffSec / 60), "minute");
-    if (abs < 86400) return rtf.format(Math.round(diffSec / 3600), "hour");
-    if (abs < 86400 * 7) return rtf.format(Math.round(diffSec / 86400), "day");
-    if (abs < 86400 * 30) return rtf.format(Math.round(diffSec / (86400 * 7)), "week");
-    if (abs < 86400 * 365) return rtf.format(Math.round(diffSec / (86400 * 30)), "month");
-    return rtf.format(Math.round(diffSec / (86400 * 365)), "year");
-  } catch {
-    return formatDate(iso);
-  }
-}
-
-/** @param {string} text */
-function inferTagGuess(text) {
-  const t = text.toLowerCase();
-  if (/passport|driver|license|sin card|identity|citizenship/.test(t)) return "Identity";
-  if (/hydro|utility|electric|water|gas bill/.test(t)) return "Utilities";
-  if (/lease|rent|landlord|tenant|housing/.test(t)) return "Housing";
-  if (/\bt4\b|tax return|income tax|irs|cra/.test(t)) return "Tax";
-  if (/bank|statement|cheque|check|finance|account/.test(t)) return "Finance";
-  if (/insurance|policy|premium|auto coverage/.test(t)) return "Insurance";
-  if (/diploma|degree|university|college|education/.test(t)) return "Education";
-  if (/whatsapp|telegram|signal|imessage|slack|discord|texted|fwd:|forwarded/.test(t)) return "Moments";
-  if (/screenshot|screen\s*shot|photo|camera|image|png|jpeg|jpg/.test(t)) return "Moments";
-  return "Identity";
-}
-
-/** @param {string} text */
-function inferTagForNote(text) {
-  const t = text.toLowerCase();
-  if (/whatsapp|telegram|signal|imessage|slack|discord|texted|fwd:|forwarded|dm /.test(t)) return "Moments";
-  return inferTagGuess(text);
-}
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function Toast({ message, onDone }) {
-  useEffect(() => {
-    const t = setTimeout(onDone, 2200);
-    return () => clearTimeout(t);
-  }, [onDone]);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 20, scale: 0.95 }}
-      className="toast-fixed"
-    >
-      {message}
-    </motion.div>
-  );
-}
-
-function RenameModal({ doc, onConfirm, onCancel }) {
-  const extMatch = doc.name.match(/(\.[^.]+)$/);
-  let ext = extMatch ? extMatch[1] : "";
-  if (doc.kind === "text") ext = ".txt";
-  else if (!ext) ext = doc.kind === "pdf" ? ".pdf" : "";
-  const baseInitial = ext ? doc.name.slice(0, doc.name.length - ext.length) : doc.name;
-  const [value, setValue] = useState(baseInitial);
-  const inputRef = useRef(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, []);
-
-  const handleKeyDown = (e) => {
-    const next = (value.trim() || "untitled") + ext;
-    if (e.key === "Enter")  onConfirm(next);
-    if (e.key === "Escape") onCancel();
-  };
-
-  return (
-    <>
-      <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(10px)", zIndex: 1300 }}
-        onClick={onCancel}
-      />
-      <motion.div
-        initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
-        style={{
-          position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
-          width: "calc(100% - 56px)", maxWidth: 400,
-          background: "#111", border: "1px solid #282828", borderRadius: 24, padding: 24, zIndex: 1400,
-        }}
-        role="dialog" aria-modal="true" aria-label="Rename item"
-      >
-        <div style={{ fontSize: 11, color: "#848480", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 16 }}>
-          Rename
-        </div>
-        <input
-          ref={inputRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-        style={{
-          width: "100%", boxSizing: "border-box",
-          background: "#1A1A1A", border: "1px solid #2a2a2a", borderRadius: 12,
-          padding: "10px 14px", color: "#EDECEA", fontSize: 16,
-          fontFamily: "'JetBrains Mono', monospace", outline: "none",
-        }}
-        />
-        <div style={{ fontSize: 10, color: "#3A3A38", marginTop: 8 }}>{ext ? `Keeps extension ${ext}` : "No extension enforced"}</div>
-        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-          <button
-            onClick={onCancel}
-            style={{
-              flex: 1, padding: "10px 0", borderRadius: 12, border: "1px solid #282828",
-              background: "transparent", color: "#848480", fontSize: 13, cursor: "pointer",
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => onConfirm((value.trim() || "untitled") + ext)}
-            style={{
-              flex: 1, padding: "10px 0", borderRadius: 12, border: "none",
-              background: "#C8963E", color: "#000", fontSize: 13, fontWeight: 600, cursor: "pointer",
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-          >
-            Save
-          </button>
-        </div>
-      </motion.div>
-    </>
-  );
-}
-
-function NoteModal({ onSave, onCancel }) {
-  const [body, setBody] = useState("");
-  const taRef = useRef(null);
-
-  useEffect(() => {
-    taRef.current?.focus();
-  }, []);
-
-  const handlePaste = async () => {
-    try {
-      const t = await navigator.clipboard.readText();
-      if (t) setBody((b) => (b ? `${b}\n${t}` : t));
-    } catch {
-      /* no permission */
-    }
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === "Escape") onCancel();
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      const t = body.trim();
-      if (t) onSave(t);
-    }
-  };
-
-  return (
-    <>
-      <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(10px)", zIndex: 1300 }}
-        onClick={onCancel}
-      />
-      <motion.div
-        initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
-        style={{
-          position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
-          width: "calc(100% - 56px)", maxWidth: 400,
-          background: "#111", border: "1px solid #282828", borderRadius: 24, padding: 24, zIndex: 1400,
-        }}
-        role="dialog" aria-modal="true" aria-label="New text note"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ fontSize: 11, color: "#848480", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
-          Text note
-        </div>
-        <div style={{ fontSize: 10, color: "#3A3A38", marginBottom: 12 }}>
-          Paste a message you would have sent yourself — like WhatsApp to self.
-        </div>
-        <textarea
-          ref={taRef}
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          onKeyDown={handleKeyDown}
-          rows={8}
-          placeholder="Type or paste…"
-          style={{
-            width: "100%", boxSizing: "border-box", resize: "vertical", minHeight: 140,
-            background: "#1A1A1A", border: "1px solid #2a2a2a", borderRadius: 12,
-            padding: "12px 14px", color: "#EDECEA", fontSize: 16,
-            fontFamily: "'JetBrains Mono', monospace", outline: "none",
-          }}
-        />
-        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-          <button
-            type="button"
-            onClick={handlePaste}
-            style={{
-              padding: "8px 14px", borderRadius: 12, border: "1px solid #282828",
-              background: "transparent", color: "#848480", fontSize: 12, cursor: "pointer",
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-          >
-            Paste from clipboard
-          </button>
-        </div>
-        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{
-              flex: 1, padding: "10px 0", borderRadius: 12, border: "1px solid #282828",
-              background: "transparent", color: "#848480", fontSize: 13, cursor: "pointer",
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => { const t = body.trim(); if (t) onSave(t); }}
-            style={{
-              flex: 1, padding: "10px 0", borderRadius: 12, border: "none",
-              background: "#5BC8C4", color: "#000", fontSize: 13, fontWeight: 600, cursor: "pointer",
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-          >
-            Save to vault
-          </button>
-        </div>
-      </motion.div>
-    </>
-  );
-}
-
-function ContextMenu({ doc, onAction, onClose }) {
-  const firstRef = useRef(null);
-
-  useEffect(() => {
-    firstRef.current?.focus();
-    const handler = (e) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
-
-  const actions = [
-    { label: "Summarize", icon: "≡", danger: false },
-    { label: "Share",    icon: "↑", danger: false },
-    { label: "Download", icon: "↓", danger: false },
-    { label: "Rename",   icon: "✎", danger: false },
-    { label: "Delete",   icon: "✕", danger: true  },
-  ];
-
-  return (
-    <>
-      <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(10px)", zIndex: 1100 }}
-        onClick={onClose}
-      />
-      <motion.div
-        initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-        transition={{ type: "spring", damping: 28, stiffness: 300 }}
-        className="settings-sheet-panel"
-        role="dialog" aria-modal="true" aria-label={`Actions for ${doc.name}`}
-      >
-        <div style={{ width: 36, height: 4, background: "#2a2a2a", borderRadius: 2, margin: "0 auto 20px" }} />
-        <div style={{ fontSize: 12, color: "#848480", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {doc.name}
-        </div>
-        <div style={{ fontSize: 10, color: "#3A3A38", marginBottom: 20 }}>{doc.date} · {doc.size}</div>
-        {actions.map((action, i) => (
-          <button
-            key={action.label}
-            ref={i === 0 ? firstRef : null}
-            onClick={() => onAction(action.label, doc)}
-            style={{
-              display: "flex", justifyContent: "space-between", alignItems: "center",
-              width: "100%", padding: "14px 0", background: "transparent",
-              border: "none", borderBottom: i < actions.length - 1 ? "1px solid #1A1A1A" : "none",
-              color: action.danger ? "#C86E8A" : "#EDECEA",
-              fontSize: 14, cursor: "pointer",
-              fontFamily: "'JetBrains Mono', monospace", textAlign: "left",
-            }}
-          >
-            <span>{action.label}</span>
-            <span style={{ fontSize: 16, opacity: 0.6 }}>{action.icon}</span>
-          </button>
-        ))}
-      </motion.div>
-    </>
-  );
-}
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -499,15 +83,8 @@ function ContextMenu({ doc, onAction, onClose }) {
 export default function Silo({ onOpenLists }) {
   const [activeTag,     setActiveTag]     = useState("All");
   const [query,         setQuery]         = useState("");
-  const [docs,          setDocs]          = useState(() => SEED_DOCS.map((d) => ({ ...d, kind: d.kind || "pdf" })));
-  const [contentById,  setContentById]   = useState(() => {
-    const o = {};
-    for (const d of SEED_DOCS) {
-      if (d.kind === "text" && DEMO_TEXT_BODY[d.id]) o[d.id] = DEMO_TEXT_BODY[d.id];
-      else o[d.id] = `${String(d.name).replace(/\.(pdf|txt)$/i, "").replace(/_/g, " ")} ${d.tag} ${DEMO_INDEX_BOOST[d.id] || ""}`;
-    }
-    return o;
-  });
+  const [docs,          setDocs]          = useState(() => getInitialDemoDocs());
+  const [contentById,  setContentById]   = useState(() => getInitialDemoContentById());
   const [opfsReady,     setOpfsReady]     = useState(false);
   const [nativeLinkReady, setNativeLinkReady] = useState(false);
   const [ingestBusy,    setIngestBusy]    = useState(false);
@@ -515,7 +92,6 @@ export default function Silo({ onOpenLists }) {
   const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [embeddingsById, setEmbeddingsById] = useState({});
-  const [queryVec, setQueryVec] = useState(null);
 
   const [contextMenu,   setContextMenu]   = useState(null);
   const [renameDoc,     setRenameDoc]     = useState(null);
@@ -545,7 +121,6 @@ export default function Silo({ onOpenLists }) {
   const pendingMergeFilesRef = useRef(null);
   const [shareListItems, setShareListItems] = useState([]);
   const [embeddingModelReady, setEmbeddingModelReady] = useState(false);
-  const [embeddingSearchBusy, setEmbeddingSearchBusy] = useState(false);
   const [sharePanelDismissed, setSharePanelDismissed] = useState(false);
   const [semanticSearchEnabled, setSemanticSearchEnabled] = useState(
     () => typeof localStorage !== "undefined" && localStorage.getItem("silo_semantic") !== "0",
@@ -563,9 +138,15 @@ export default function Silo({ onOpenLists }) {
     () => (typeof localStorage !== "undefined" ? localStorage.getItem("silo_density") : null) || "comfortable",
   );
   const [storageStats, setStorageStats] = useState(/** @type {{ usage: number, quota: number } | null} */ (null));
+  const [vaultHealthReport, setVaultHealthReport] = useState(/** @type {import("./vault/health.js").ReturnType<typeof checkVaultHealth> extends Promise<infer R> ? R | null : null} */ (null));
+  const [showRecoveryScreen, setShowRecoveryScreen] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(
+    () => !hasCompletedOnboarding() && !isDemoDataEnabled(),
+  );
 
   const storageMode = useStorageMode();
   const { showBanner: showInstallBanner, deferredPrompt, install: pwaInstall, dismiss: dismissInstallBanner } = usePWAInstall();
+  const { updateReady, reloadToUpdate, dismissUpdate } = usePwaLifecycle();
 
   useEffect(() => {
     try {
@@ -759,6 +340,10 @@ export default function Silo({ onOpenLists }) {
         const entries = await loadManifest(vault);
         if (cancelled || !entries.length) {
           setVaultUnlockGate(false);
+          if (entries.length > 0) {
+            markOnboardingComplete();
+            setShowOnboarding(false);
+          }
           return;
         }
 
@@ -797,6 +382,14 @@ export default function Silo({ onOpenLists }) {
         }
         setDocs((prev) => mergeDocs(prev.filter((d) => d.source !== "local"), localRows));
         setContentById((prev) => ({ ...prev, ...contentUpdates }));
+        markOnboardingComplete();
+        setShowOnboarding(false);
+
+        const health = await checkVaultHealth(vault, entries, { semanticSearchEnabled });
+        if (!cancelled) {
+          setVaultHealthReport(health);
+          setShowRecoveryScreen(!health.healthy && health.summary.critical > 0);
+        }
         const embMap = {};
         for (const e of entries) {
           const emb = await loadEmbedding(vault, e.id);
@@ -810,22 +403,25 @@ export default function Silo({ onOpenLists }) {
     return () => {
       cancelled = true;
     };
-  }, [vaultPassphrase, vaultEpoch]);
+  }, [vaultPassphrase, vaultEpoch, semanticSearchEnabled]);
 
-  const searchIndex = useMemo(() => {
-    const rows = docs.map((d) => ({
-      id: d.id,
-      name: d.name,
-      tag: d.tag,
-      kind: d.kind || "pdf",
-      content: buildCombinedIndexText(d, contentById[d.id] ?? ""),
-    }));
-    return buildVaultSearchIndex(rows);
-  }, [docs, contentById]);
+  const {
+    display,
+    setQueryVec,
+    embeddingSearchBusy,
+  } = useVaultSearch({
+    docs,
+    contentById,
+    query,
+    activeTag,
+    smartView,
+    semanticSearchEnabled,
+    embeddingsById,
+  });
 
-  // ── Demo docs: local embeddings for hybrid semantic search ──
+  // ── Demo docs: local embeddings for hybrid semantic search (demo mode only) ──
   useEffect(() => {
-    if (!semanticSearchEnabled) return;
+    if (!semanticSearchEnabled || !isDemoDataEnabled()) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -847,91 +443,6 @@ export default function Silo({ onOpenLists }) {
     return () => { cancelled = true; };
   }, [semanticSearchEnabled]);
 
-  // ── Query embedding (debounced) for semantic leg of search ──
-  useEffect(() => {
-    const t = query.trim();
-    if (!t || !semanticSearchEnabled) {
-      setQueryVec(null);
-      setEmbeddingSearchBusy(false);
-      return;
-    }
-    setEmbeddingSearchBusy(true);
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      void (async () => {
-        try {
-          const { embedText } = await import("./vault/embeddings.js");
-          const v = await embedText(t);
-          if (!cancelled) setQueryVec(v);
-        } catch {
-          if (!cancelled) setQueryVec(null);
-        } finally {
-          if (!cancelled) setEmbeddingSearchBusy(false);
-        }
-      })();
-    }, 280);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [query, semanticSearchEnabled]);
-
-  const duplicateHashes = useMemo(() => {
-    const counts = new Map();
-    for (const d of docs) {
-      if (d.source !== "local" || !d.contentHash) continue;
-      counts.set(d.contentHash, (counts.get(d.contentHash) || 0) + 1);
-    }
-    const dup = new Set();
-    for (const [h, c] of counts) if (c > 1) dup.add(h);
-    return dup;
-  }, [docs]);
-
-  const duplicateFingerprints = useMemo(() => {
-    const counts = new Map();
-    for (const d of docs) {
-      if (d.source !== "local" || !d.textFingerprint) continue;
-      counts.set(d.textFingerprint, (counts.get(d.textFingerprint) || 0) + 1);
-    }
-    const dup = new Set();
-    for (const [h, c] of counts) if (c > 1) dup.add(h);
-    return dup;
-  }, [docs]);
-
-  // ── Filtered display data ──
-  const display = useMemo(() => {
-    const q = query.trim();
-    let idSet = null;
-    if (q) {
-      const textIds = searchIndex.matchingDocIds(q);
-      const hasEmb = Object.keys(embeddingsById).length > 0;
-      if (semanticSearchEnabled && queryVec && hasEmb) {
-        const vecIds = topMatchingDocIds(embeddingsById, queryVec, 0.28, 120);
-        idSet = mergeSearchIds(textIds, vecIds, 0.42);
-      } else {
-        idSet = textIds;
-      }
-    }
-    const filtered = docs.filter((d) => {
-      const tagOk = activeTag === "All" || d.tag === activeTag;
-      const idOk = idSet == null || idSet.has(String(d.id));
-      if (!tagOk || !idOk) return false;
-      if (!smartView) return true;
-      const sv = SMART_VIEWS.find((s) => s.id === smartView);
-      if (!sv) return true;
-      const ctx = { contentById, duplicateHashes, duplicateFingerprints };
-      return sv.match(d, ctx);
-    });
-    const tagOrder = Object.keys(TAG_META);
-    const extra = [...new Set(filtered.map((d) => d.tag))].filter((t) => !TAG_META[t]).sort();
-    const orderedTags = [...tagOrder.filter((t) => filtered.some((d) => d.tag === t)), ...extra];
-    return orderedTags.reduce((acc, tag) => {
-      const items = filtered.filter((doc) => doc.tag === tag);
-      if (items.length) acc[tag] = items;
-      return acc;
-    }, {});
-  }, [docs, activeTag, query, searchIndex, embeddingsById, queryVec, smartView, contentById, duplicateHashes, duplicateFingerprints, semanticSearchEnabled]);
-
   const hasResults = Object.keys(display).length > 0;
 
   const emptyVariant = useMemo(() => {
@@ -944,6 +455,18 @@ export default function Silo({ onOpenLists }) {
   }, [hasResults, query, smartView, activeTag, docs.length]);
 
   // Total converted to GB for the hero stat
+  const handleOnboardingComplete = useCallback(() => {
+    markOnboardingComplete();
+    setShowOnboarding(false);
+  }, []);
+
+  const vaultStatusLabel = useMemo(() => {
+    if (isDemoDataEnabled()) return "Demo vault";
+    if (opfsReady) return "Private on this device";
+    if (storageMode !== "checking" && storageMode !== "opfs") return "Limited storage";
+    return "Connecting…";
+  }, [opfsReady, storageMode]);
+
   const totalGB = useMemo(() => {
     let mb = 0;
     for (const d of docs) {
@@ -1536,14 +1059,16 @@ export default function Silo({ onOpenLists }) {
       showToast("No local entries");
       return;
     }
-    const issues = await checkVaultIntegrity(vault, entries);
-    if (!issues.length) showToast("Vault integrity OK");
+    const report = await checkVaultHealth(vault, entries, { semanticSearchEnabled });
+    setVaultHealthReport(report);
+    if (report.healthy) showToast("Vault health OK");
     else {
+      setShowRecoveryScreen(report.summary.critical > 0);
       showToast(
-        `${issues.length} issue(s): ${issues.slice(0, 3).map((i) => i.code).join(", ")}${issues.length > 3 ? "…" : ""}`,
+        `${report.summary.total} issue(s): ${report.issues.slice(0, 3).map((i) => i.code).join(", ")}${report.summary.total > 3 ? "…" : ""}`,
       );
     }
-  }, [showToast]);
+  }, [showToast, semanticSearchEnabled]);
 
   const handleRepairVault = useCallback(async () => {
     const vault = vaultRef.current;
@@ -1565,13 +1090,17 @@ export default function Silo({ onOpenLists }) {
       }
       setVaultEpoch((x) => x + 1);
       showToast("Repair pass complete — reindexed from blobs");
+      const entriesAfter = await loadManifest(vault);
+      const report = await checkVaultHealth(vault, entriesAfter, { semanticSearchEnabled });
+      setVaultHealthReport(report);
+      setShowRecoveryScreen(!report.healthy && report.summary.critical > 0);
     } catch (err) {
       console.error(err);
       showToast("Repair failed");
     } finally {
       setIngestBusy(false);
     }
-  }, [resolveLocalFile, vaultPassphrase, showToast]);
+  }, [resolveLocalFile, vaultPassphrase, showToast, semanticSearchEnabled]);
 
   const handleClearShareQueue = useCallback(async () => {
     await clearAllPendingShares();
@@ -1732,6 +1261,7 @@ export default function Silo({ onOpenLists }) {
     rewrapAllVaultText,
     vaultPassphrase,
     showToast,
+    setQueryVec,
   ]);
 
   const handlePointerDown = useCallback((doc, e) => {
@@ -1824,18 +1354,13 @@ export default function Silo({ onOpenLists }) {
       }
       await saveManifest(vault, []);
       await clearAllLinkedFileHandles();
-      setDocs(SEED_DOCS.map((d) => ({ ...d, kind: d.kind || "pdf" })));
-      const demoContent = {};
-      for (const d of SEED_DOCS) {
-        if (d.kind === "text" && DEMO_TEXT_BODY[d.id]) demoContent[d.id] = DEMO_TEXT_BODY[d.id];
-        else demoContent[d.id] = `${String(d.name).replace(/\.(pdf|txt)$/i, "").replace(/_/g, " ")} ${d.tag} ${DEMO_INDEX_BOOST[d.id] || ""}`;
-      }
-      setContentById(demoContent);
+      setDocs(getInitialDemoDocs());
+      setContentById(getInitialDemoContentById());
       setEmbeddingsById({});
       setPreviewDoc(null);
       setVaultUnlockGate(false);
       setVaultEpoch((x) => x + 1);
-      showToast("Vault reset — demo items restored");
+      showToast(isDemoDataEnabled() ? "Vault reset — demo items restored" : "Vault reset — all local data cleared");
     } catch (e) {
       console.error(e);
       showToast("Reset failed");
@@ -2012,10 +1537,16 @@ export default function Silo({ onOpenLists }) {
         </div>
       )}
 
+      {updateReady && (
+        <div style={{ gridColumn: "1 / -1", paddingTop: "var(--safe-top)" }}>
+          <UpdateAvailableBanner onReload={reloadToUpdate} onDismiss={dismissUpdate} />
+        </div>
+      )}
+
       <ConfirmDialog
         open={confirmResetOpen}
         title="Reset entire vault?"
-        body="This deletes all documents stored in Silo on this device (OPFS). Demo sample documents will return. Linked file handles are cleared. This cannot be undone."
+        body="This deletes all documents stored in Silo on this device (OPFS). Linked file handles are cleared. This cannot be undone."
         confirmLabel="Yes, reset vault"
         confirmVariant="danger"
         onConfirm={() => { void executeResetVault(); }}
@@ -2154,7 +1685,7 @@ export default function Silo({ onOpenLists }) {
                       boxShadow: opfsReady ? "0 0 8px color-mix(in srgb, var(--color-success) 50%, transparent)" : "none",
                       flexShrink: 0,
                     }}
-                    title={opfsReady ? "Vault ready" : "Demo mode"}
+                    title={vaultStatusLabel}
                     aria-hidden
                   />
                 </div>
@@ -2425,6 +1956,33 @@ export default function Silo({ onOpenLists }) {
             doc={renameDoc}
             onConfirm={(newName) => { void handleRename(renameDoc, newName); }}
             onCancel={() => setRenameDoc(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showOnboarding && !vaultListLoading && (
+          <OnboardingScreen
+            storageLimited={storageMode !== "checking" && storageMode !== "opfs"}
+            onComplete={handleOnboardingComplete}
+            onAddFirst={() => setIngestDialogOpen(true)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showRecoveryScreen && vaultHealthReport && !vaultHealthReport.healthy && (
+          <VaultRecoveryScreen
+            issues={vaultHealthReport.issues}
+            summary={vaultHealthReport.summary}
+            busy={ingestBusy}
+            onExportBackup={() => { void handleExportVaultZip(); }}
+            onRepair={() => { void handleRepairVault(); }}
+            onDismiss={
+              vaultHealthReport.summary.critical === 0
+                ? () => setShowRecoveryScreen(false)
+                : undefined
+            }
           />
         )}
       </AnimatePresence>
