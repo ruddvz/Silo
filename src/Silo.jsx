@@ -40,6 +40,21 @@ import { IngestDialog } from "./components/IngestDialog.jsx";
 import { PreviewPanel } from "./components/PreviewPanel.jsx";
 import { SettingsDrawer } from "./components/SettingsDrawer.jsx";
 import { SettingsGroup } from "./components/ui/SettingsGroup.jsx";
+import {
+  IconBan,
+  IconCheck,
+  IconExport,
+  IconFolder,
+  IconImport,
+  IconInfo,
+  IconLists,
+  IconLock,
+  IconRefresh,
+  IconSparkles,
+  IconTrash,
+  IconUnlock,
+  IconWarning,
+} from "./components/ui/icons.jsx";
 import { UnlockScreen } from "./components/UnlockScreen.jsx";
 import { PrivacyModal } from "./components/PrivacyModal.jsx";
 import { Toast } from "./components/Toast.jsx";
@@ -1185,40 +1200,41 @@ export default function Silo({ onOpenLists }) {
     }
   }, [showToast]);
 
+  const settingsIconSize = 20;
   const settingsActions = useMemo(() => [
     {
       id: "lists",
       label: "Open Silo Lists (shared checklists)",
-      icon: "☰",
+      icon: <IconLists size={settingsIconSize} />,
       onSelect: () => {
         onOpenLists?.();
         setSettingsOpen(false);
       },
     },
-    { id: "export", label: "Export backup (.zip)", icon: "↑", onSelect: () => { void handleExportVaultZip(); } },
-    { id: "import", label: "Import / merge backup", icon: "↓", onSelect: () => { backupImportRef.current?.click(); } },
+    { id: "export", label: "Export backup (.zip)", icon: <IconExport size={settingsIconSize} />, onSelect: () => { void handleExportVaultZip(); } },
+    { id: "import", label: "Import / merge backup", icon: <IconImport size={settingsIconSize} />, onSelect: () => { backupImportRef.current?.click(); } },
     {
       id: "folder",
       label: "Import folder (Chrome)",
-      icon: "▤",
+      icon: <IconFolder size={settingsIconSize} />,
       disabled: !supportsDirectoryPicker(),
       onSelect: () => { void handleImportFolderFromDisk(); },
     },
-    { id: "integrity", label: "Check vault integrity", icon: "✓", onSelect: () => { void handleCheckVaultIntegrity(); } },
-    { id: "repair", label: "Repair vault (rebuild text/embeddings)", icon: "↻", onSelect: () => { void handleRepairVault(); } },
+    { id: "integrity", label: "Check vault integrity", icon: <IconCheck size={settingsIconSize} />, onSelect: () => { void handleCheckVaultIntegrity(); } },
+    { id: "repair", label: "Repair vault (rebuild text/embeddings)", icon: <IconRefresh size={settingsIconSize} />, onSelect: () => { void handleRepairVault(); } },
     {
       id: "retryshares",
       label: "Retry pending share imports",
-      icon: "↺",
+      icon: <IconRefresh size={settingsIconSize} />,
       disabled: importQueueCount === 0 || ingestBusy,
       keepOpen: true,
       onSelect: () => { void handleRetryShareImports(); },
     },
-    { id: "clearshares", label: "Clear pending shares queue", icon: "⊘", onSelect: () => { void handleClearShareQueue(); } },
+    { id: "clearshares", label: "Clear pending shares queue", icon: <IconBan size={settingsIconSize} />, onSelect: () => { void handleClearShareQueue(); } },
     {
       id: "semantic",
       label: semanticSearchEnabled ? "Semantic search: on" : "Semantic search: off",
-      icon: "◎",
+      icon: <IconSparkles size={settingsIconSize} />,
       keepOpen: true,
       onSelect: () => {
         setSemanticSearchEnabled((v) => {
@@ -1238,14 +1254,14 @@ export default function Silo({ onOpenLists }) {
     {
       id: "clearemb",
       label: "Clear semantic index",
-      icon: "◇",
+      icon: <IconTrash size={settingsIconSize} />,
       disabled: !opfsReady || ingestBusy,
       onSelect: () => { void handleClearSemanticIndex(); },
     },
     {
       id: "resetvault",
       label: "Reset vault (delete all local data)",
-      icon: "⚠",
+      icon: <IconWarning size={settingsIconSize} />,
       danger: true,
       disabled: !opfsReady || ingestBusy,
       onSelect: () => { setConfirmResetOpen(true); },
@@ -1253,19 +1269,19 @@ export default function Silo({ onOpenLists }) {
     {
       id: "pass",
       label: "Set vault passphrase (encrypts index text)",
-      icon: "🔒",
+      icon: <IconLock size={settingsIconSize} />,
       onSelect: () => setPassphraseModal("set"),
     },
     {
       id: "clearpass",
       label: "Clear vault passphrase",
-      icon: "🔓",
+      icon: <IconUnlock size={settingsIconSize} />,
       onSelect: () => setPassphraseModal("clear"),
     },
     {
       id: "privacy",
       label: "Privacy policy",
-      icon: "ℹ",
+      icon: <IconInfo size={settingsIconSize} />,
       keepOpen: true,
       onSelect: () => setPrivacyOpen(true),
     },
@@ -1891,6 +1907,7 @@ export default function Silo({ onOpenLists }) {
       <div className={`app-shell__preview ${previewDoc ? "app-shell__preview--open" : ""}`}>
         <PreviewPanel
           doc={previewDoc}
+          contentSnippet={previewDoc ? (contentById[previewDoc.id] ?? "") : ""}
           onOpen={(d) => { void handleOpenDoc(d); }}
           onExport={handleDownloadDoc}
           onRename={(d) => setRenameDoc(d)}

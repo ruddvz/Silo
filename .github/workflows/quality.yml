@@ -39,6 +39,8 @@ jobs:
 
       # Preview + Axe must run in one step: GHA terminates background jobs when the step ends.
       - name: Start preview, wait, then Axe scan
+        env:
+          VITE_BASE_URL: /${{ github.event.repository.name }}/
         run: |
           set -euo pipefail
           BASE_PATH="/${{ github.event.repository.name }}/"
@@ -58,6 +60,8 @@ jobs:
             sleep 1
           done
           node scripts/check-render.mjs "${PREVIEW_URL}"
+          npx playwright install chromium --with-deps
+          QA_URL="${PREVIEW_URL}" node scripts/visual-qa.mjs
           npx @axe-core/cli "${PREVIEW_URL}" --exit --tags wcag2a
 
       # Lighthouse often hits NO_FCP against local Vite preview in headless CI; run it locally after `vite preview` if needed (see docs/device-qa-checklist.md).
