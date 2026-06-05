@@ -1,0 +1,48 @@
+/* Silo OS app shell layout */
+
+html,
+body,
+#root {
+  min-height: 100%;
+  width: 100%;
+  margin: 0;
+  background: var(--silo-bg);
+  overscroll-behavior-y: none;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  color: var(--silo-text);
+}
+
+.silo-app-shell {
+  position: relative;
+  min-height: 100svh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  color: var(--silo-text);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(214, 168, 79, 0.14), transparent 34%),
+    radial-gradient(circle at 88% 12%, rgba(120, 216, 210, 0.08), transparent 32%),
+    linear-gradient(180deg, var(--silo-bg-2) 0%, var(--silo-bg) 62%);
+}
+
+.has-bottom-nav {
+  padding-bottom: calc(var(--safe-bottom) + var(--app-tabbar-height) + 24px);
+}
+
+.toast-fixed {
+  bottom: calc(var(--safe-bottom) + var(--app-tabbar-height) + 18px) !important;
+}
+
+@media (min-width: 900px) {
+  .has-bottom-nav {
+    padding-bottom: 0;
+  }
+
+  .toast-fixed {
+    bottom: calc(var(--safe-bottom) + 18px) !important;
+  }
+}

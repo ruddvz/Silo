@@ -32,7 +32,7 @@ export function PreviewPanel({ doc, onOpen, onExport, onRename, onDelete, onClos
   }
 
   const k = doc.kind || "pdf";
-  const storageLabel = doc.storage === "linked" ? "Linked from disk" : "In vault (OPFS)";
+  const storageLabel = doc.storage === "linked" ? "Linked from disk" : "Stored in vault";
 
   return (
     <motion.aside

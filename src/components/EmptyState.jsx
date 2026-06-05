@@ -11,8 +11,14 @@ const EMPTY_CONFIGS = {
   },
   search: {
     icon: "🔍",
-    title: "Nothing found",
-    body: "Try different keywords, or check the category filters.",
+    title: "No matches found",
+    body: "Try a broader word, check another category, or add more items to Silo.",
+    cta: null,
+  },
+  "search-idle": {
+    icon: "🔍",
+    title: "Search anything",
+    body: 'Try "passport," "rent," "bank statement," or "voice memo."',
     cta: null,
   },
   category: {

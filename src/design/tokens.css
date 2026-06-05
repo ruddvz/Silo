@@ -1,58 +1,108 @@
-/* Design tokens — Plan0 / Silo production UI */
+/* Silo OS — design tokens (iOS PWA first) */
 
 :root {
-  /* Neutrals */
-  --color-bg: #0f0f10;
-  --color-surface: #161618;
-  --color-surface-2: #1e1e21;
-  --color-border: #2a2a2f;
-  --color-border-hover: #3a3a42;
+  color-scheme: dark;
 
-  /* Text */
-  --color-text-primary: #f0eff4;
-  --color-text-secondary: #8b8a94;
-  --color-text-muted: #55545e;
+  /* Silo OS palette */
+  --silo-bg: #090b0f;
+  --silo-bg-2: #0d1016;
+  --silo-bg-3: #111620;
 
-  /* Brand */
-  --color-accent: #7f6cf5;
-  --color-accent-dim: #7f6cf520;
-  --color-accent-hover: #9886f7;
+  --silo-surface: rgba(255, 255, 255, 0.06);
+  --silo-surface-2: rgba(255, 255, 255, 0.085);
+  --silo-surface-3: rgba(255, 255, 255, 0.12);
+  --silo-surface-solid: #171b23;
+  --silo-surface-elevated: #1d232e;
 
-  /* Semantic */
-  --color-success: #3ecf8e;
-  --color-warning: #f5a623;
-  --color-danger: #ef4444;
-  --color-info: #38bdf8;
+  --silo-line: rgba(255, 255, 255, 0.09);
+  --silo-line-strong: rgba(255, 255, 255, 0.16);
 
-  /* Category pills (auto-assigned) */
-  --cat-0: #7f6cf5;
-  --cat-1: #3ecf8e;
-  --cat-2: #f5a623;
-  --cat-3: #ef4444;
-  --cat-4: #38bdf8;
-  --cat-5: #e879f9;
+  --silo-text: #f6f4ef;
+  --silo-text-2: #d8d3c8;
+  --silo-text-3: #a7a095;
+  --silo-text-4: #706c65;
+
+  --silo-accent: #d6a84f;
+  --silo-accent-2: #f0c86e;
+  --silo-accent-soft: rgba(214, 168, 79, 0.16);
+  --silo-accent-line: rgba(214, 168, 79, 0.34);
+
+  --silo-cyan: #78d8d2;
+  --silo-cyan-soft: rgba(120, 216, 210, 0.14);
+
+  --silo-success: #75d68f;
+  --silo-success-soft: rgba(117, 214, 143, 0.14);
+
+  --silo-warning: #e5b460;
+  --silo-warning-soft: rgba(229, 180, 96, 0.14);
+
+  --silo-danger: #ff7a90;
+  --silo-danger-soft: rgba(255, 122, 144, 0.14);
+
+  --silo-info: #8cb7ff;
+  --silo-info-soft: rgba(140, 183, 255, 0.14);
+
+  /* Legacy aliases (existing components) */
+  --color-bg: var(--silo-bg);
+  --color-surface: var(--silo-surface-solid);
+  --color-surface-2: var(--silo-surface-elevated);
+  --color-border: var(--silo-line);
+  --color-border-hover: var(--silo-line-strong);
+  --color-text-primary: var(--silo-text);
+  --color-text-secondary: var(--silo-text-3);
+  --color-text-muted: var(--silo-text-4);
+  --color-accent: var(--silo-accent);
+  --color-accent-dim: var(--silo-accent-soft);
+  --color-accent-hover: var(--silo-accent-2);
+  --color-success: var(--silo-success);
+  --color-warning: var(--silo-warning);
+  --color-danger: var(--silo-danger);
+  --color-info: var(--silo-info);
+
+  --cat-0: var(--silo-accent);
+  --cat-1: var(--silo-success);
+  --cat-2: var(--silo-warning);
+  --cat-3: var(--silo-danger);
+  --cat-4: var(--silo-info);
+  --cat-5: var(--silo-cyan);
   --cat-6: #fb923c;
   --cat-7: #a3e635;
 
   /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", Inter, system-ui, sans-serif;
   --font-display: "Instrument Serif", Georgia, serif;
-  --font-body: "DM Sans", system-ui, sans-serif;
-  --font-mono: "Geist Mono", "JetBrains Mono", "Fira Code", monospace;
+  --font-body: var(--font-sans);
+  --font-mono: "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace;
 
-  --text-xs: 0.6875rem;
-  --text-sm: 0.8125rem;
-  --text-base: 0.9375rem;
-  --text-md: 1.0625rem;
-  --text-lg: 1.25rem;
-  --text-xl: 1.5rem;
-  --text-2xl: 2rem;
+  --text-hero: 2.125rem;
+  --text-title-1: 1.875rem;
+  --text-title-2: 1.5rem;
+  --text-title-3: 1.25rem;
+  --text-body: 1rem;
+  --text-callout: 0.9375rem;
+  --text-subhead: 0.875rem;
+  --text-footnote: 0.8125rem;
+  --text-caption: 0.75rem;
+
+  --text-xs: var(--text-caption);
+  --text-sm: var(--text-footnote);
+  --text-base: var(--text-body);
+  --text-md: var(--text-callout);
+  --text-lg: var(--text-title-3);
+  --text-xl: var(--text-title-2);
+  --text-2xl: var(--text-title-1);
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
 
   --leading-tight: 1.25;
   --leading-normal: 1.55;
   --leading-relaxed: 1.75;
 
   --tracking-tight: -0.02em;
-  --tracking-normal: 0em;
+  --tracking-normal: 0;
   --tracking-wide: 0.04em;
   --tracking-widest: 0.12em;
 
@@ -63,27 +113,71 @@
   --space-4: 16px;
   --space-5: 20px;
   --space-6: 24px;
+  --space-7: 28px;
   --space-8: 32px;
   --space-10: 40px;
   --space-12: 48px;
   --space-16: 64px;
 
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
-  --radius-full: 9999px;
+  /* Radius */
+  --radius-xs: 10px;
+  --radius-sm: 14px;
+  --radius-md: 18px;
+  --radius-lg: 24px;
+  --radius-xl: 30px;
+  --radius-2xl: 36px;
+  --radius-pill: 999px;
+  --radius-full: var(--radius-pill);
 
+  /* Shadows & glass */
+  --shadow-card: 0 16px 44px rgba(0, 0, 0, 0.26);
+  --shadow-sheet: 0 -24px 70px rgba(0, 0, 0, 0.42);
+  --shadow-nav: 0 18px 60px rgba(0, 0, 0, 0.42);
+  --glass-blur: blur(22px) saturate(150%);
+
+  /* Motion */
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-sheet: 260ms;
+  --ease-ios: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Safe area & shell */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
 
-  /* Silo brand aliases (plan tokens) */
-  --silo-bg: var(--color-bg);
-  --silo-surface: var(--color-surface);
-  --silo-accent: #c8963e;
-  --silo-info: #5bc8c4;
+  --app-header-height: 64px;
+  --app-tabbar-height: 78px;
+  --app-horizontal-padding: 16px;
+
   --silo-safe-top: var(--safe-top);
   --silo-safe-bottom: var(--safe-bottom);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --silo-bg: #f6f2ea;
+  --silo-bg-2: #fbf8f1;
+  --silo-bg-3: #ffffff;
+
+  --silo-surface: rgba(255, 255, 255, 0.72);
+  --silo-surface-2: rgba(255, 255, 255, 0.88);
+  --silo-surface-3: rgba(255, 255, 255, 0.96);
+  --silo-surface-solid: #ffffff;
+  --silo-surface-elevated: #ffffff;
+
+  --silo-line: rgba(26, 20, 12, 0.09);
+  --silo-line-strong: rgba(26, 20, 12, 0.16);
+
+  --silo-text: #16130e;
+  --silo-text-2: #3a342b;
+  --silo-text-3: #72685c;
+  --silo-text-4: #a09485;
+
+  --silo-accent: #9a6b18;
+  --silo-accent-2: #b88422;
+  --silo-accent-soft: rgba(154, 107, 24, 0.12);
+  --silo-accent-line: rgba(154, 107, 24, 0.26);
 }
