@@ -26,6 +26,12 @@ jobs:
       - name: ESLint
         run: npm run lint
 
+      - name: Unit tests
+        run: npm run test
+
+      - name: Generate PWA assets
+        run: npm run gen:icons
+
       - name: Production build (GitHub Pages base)
         env:
           VITE_BASE_URL: /${{ github.event.repository.name }}/

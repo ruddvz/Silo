@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/gh-pages-postbuild.mjs",
+    "build": "npm run gen:icons && vite build && node scripts/gh-pages-postbuild.mjs",
     "lint": "eslint .",
     "test": "vitest run --config vite.config.test.js",
     "test:watch": "vitest --config vite.config.test.js",

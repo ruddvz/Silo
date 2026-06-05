@@ -6,7 +6,10 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["standalone", "minimal-ui"],
+  "display_override": ["standalone", "minimal-ui", "window-controls-overlay"],
+  "edge_side_panel": {
+    "preferred_width": 420
+  },
   "orientation": "portrait-primary",
   "background_color": "#0f0f10",
   "theme_color": "#0f0f10",

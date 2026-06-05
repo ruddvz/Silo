@@ -21,6 +21,7 @@ function SearchIcon() {
  *   semanticLabel?: string,
  *   placeholder?: string,
  *   inputId?: string,
+ *   resultCount?: number | null,
  *   onBlur?: () => void,
  * }} props
  */
@@ -32,6 +33,7 @@ export function SearchBar({
   semanticLabel,
   placeholder = "Search vault…",
   inputId = "silo-global-search",
+  resultCount = null,
   onBlur,
 }) {
   const [draft, setDraft] = useState(value);
@@ -138,6 +140,11 @@ export function SearchBar({
       {semanticLabel != null && semanticLabel !== "" && (
         <span className={`search-semantic-pill ${semanticReady ? "search-semantic-pill--ready" : ""}`} title="On-device embeddings">
           {semanticLabel}
+        </span>
+      )}
+      {resultCount != null && value.trim() && !isSearching && (
+        <span className="search-result-count" aria-live="polite">
+          {resultCount}
         </span>
       )}
       {!focused && !draft && (
