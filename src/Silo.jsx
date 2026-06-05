@@ -20,9 +20,6 @@ import {
   removeLinkedFileHandle,
   clearAllLinkedFileHandles,
 } from "./vault/nativeFileHandles.js";
-import { buildVaultSearchIndex } from "./vault/searchIndex.js";
-import { topMatchingDocIds } from "./vault/vectorSearch.js";
-import { mergeSearchIds } from "./vault/hybridSearch.js";
 import {
   removePendingShare,
   getAllPendingShares,
@@ -55,23 +52,18 @@ import { PreviewPanel } from "./components/PreviewPanel.jsx";
 import { SettingsDrawer } from "./components/SettingsDrawer.jsx";
 import { UnlockScreen } from "./components/UnlockScreen.jsx";
 import { PrivacyModal } from "./components/PrivacyModal.jsx";
+import { Toast } from "./components/Toast.jsx";
+import { RenameModal } from "./components/RenameModal.jsx";
+import { NoteModal } from "./components/NoteModal.jsx";
+import { ContextMenu } from "./components/ContextMenu.jsx";
 import { useStorageMode } from "./hooks/useStorageMode.js";
 import { usePWAInstall, bumpMeaningfulInteraction } from "./hooks/usePWAInstall.js";
+import { useVaultSearch } from "./hooks/useVaultSearch.js";
+import { APP_ICON_SRC, DEFAULT_VAULT_FILE_ACCEPT, VAULT_FILE_ACCEPT_BY_KIND } from "./lib/vaultConstants.js";
+import { formatBytes, formatRelativeDate, parseMB } from "./lib/vaultFormat.js";
+import { ALL_TAGS, inferTagGuess, inferTagForNote } from "./lib/vaultTags.js";
+import { mergeDocs, buildCombinedIndexText, SMART_VIEWS, supportsDirectoryPicker } from "./lib/vaultDocs.js";
 import "./silo-app.css";
-
-/** Same artwork as favicon / PWA manifest (`public/icons/icon.svg`) */
-const APP_ICON_SRC = `${import.meta.env.BASE_URL}icons/icon.svg`.replace(/\/{2,}/g, "/");
-
-const DEFAULT_VAULT_FILE_ACCEPT =
-  ".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.heic,.heif,.m4a,.aac,.mp3,.wav,.webm,.ogg,.opus,.flac,application/pdf,image/*,audio/*";
-
-/** @type {Record<string, string>} */
-const VAULT_FILE_ACCEPT_BY_KIND = {
-  pdf: ".pdf,application/pdf",
-  image: ".png,.jpg,.jpeg,.gif,.webp,.bmp,.heic,.heif,image/*",
-  audio: ".m4a,.aac,.mp3,.wav,.webm,.ogg,.opus,.flac,audio/*",
-  any: DEFAULT_VAULT_FILE_ACCEPT,
-};
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -117,382 +109,9 @@ const DEMO_INDEX_BOOST = {
   20: "whatsapp message forwarded note self chat reminder landlord rent due april",
 };
 
-const TAG_META = {
-  Identity:  { color: "#C8963E", bg: "rgba(200,150,62,0.10)",  label: "ID"  },
-  Utilities: { color: "#5B9BD5", bg: "rgba(91,155,213,0.10)",  label: "UTL" },
-  Housing:   { color: "#6BBF7A", bg: "rgba(107,191,122,0.10)", label: "HSG" },
-  Tax:       { color: "#C86E8A", bg: "rgba(200,110,138,0.10)", label: "TAX" },
-  Finance:   { color: "#D4935A", bg: "rgba(212,147,90,0.10)",  label: "FIN" },
-  Insurance: { color: "#9B7EC8", bg: "rgba(155,126,200,0.10)", label: "INS" },
-  Education: { color: "#C8B43E", bg: "rgba(200,180,62,0.10)",  label: "EDU" },
-  Moments:   { color: "#5BC8C4", bg: "rgba(91,200,196,0.10)",  label: "MSG" },
-};
-
-const ALL_TAGS = ["All", ...Object.keys(TAG_META)];
-
 const DEMO_TEXT_BODY = {
   20: "Hey — reminder rent is due April 5. E-transfer to the usual address. Thx!",
 };
-
-function buildCombinedIndexText(doc, content) {
-  const k = doc.kind || "pdf";
-  const base = `${doc.name} ${doc.tag} ${k}`;
-  return `${base} ${content || ""}`.trim();
-}
-
-function mergeDocs(seed, local) {
-  const byId = new Map();
-  for (const d of seed) byId.set(String(d.id), d);
-  for (const d of local) byId.set(String(d.id), d);
-  return Array.from(byId.values()).sort((a, b) => {
-    const ta = new Date(a.createdAt || 0).getTime();
-    const tb = new Date(b.createdAt || 0).getTime();
-    return tb - ta;
-  });
-}
-
-const SMART_VIEWS = [
-  { id: "Recent",    label: "Recent",    match: (d) => daysSince(d.createdAt) <= 7 },
-  { id: "Voice",     label: "Voice",     match: (d) => (d.kind || "") === "audio" },
-  { id: "Screenshots", label: "Shots",   match: (d, ctx) => (d.kind || "") === "image" || /screenshot|screen\s*shot/i.test(d.name + (ctx.contentById?.[d.id] || "")) },
-  { id: "LowOCR",    label: "Low OCR",   match: (d, ctx) => (d.kind || "") === "image" && String(ctx.contentById?.[d.id] || "").trim().length < 24 },
-  { id: "Duplicates", label: "Dupes",   match: (d, ctx) => d.source === "local" && ((d.contentHash && ctx.duplicateHashes?.has(d.contentHash)) || (d.textFingerprint && ctx.duplicateFingerprints?.has(d.textFingerprint))) },
-];
-
-function daysSince(iso) {
-  const t = new Date(iso || 0).getTime();
-  if (!Number.isFinite(t)) return 999;
-  return (Date.now() - t) / (86400 * 1000);
-}
-
-function supportsDirectoryPicker() {
-  return typeof window !== "undefined" && typeof window.showDirectoryPicker === "function";
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function parseMB(sizeStr) {
-  const n = parseFloat(sizeStr);
-  return sizeStr.includes("MB") ? n : n / 1024;
-}
-
-function formatBytes(n) {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatDate(iso) {
-  try {
-    return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
-}
-
-function formatRelativeDate(iso) {
-  try {
-    const d = new Date(iso);
-    const now = Date.now();
-    const diffSec = Math.round((d.getTime() - now) / 1000);
-    const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-    const abs = Math.abs(diffSec);
-    if (abs < 60) return rtf.format(0, "second");
-    if (abs < 3600) return rtf.format(Math.round(diffSec / 60), "minute");
-    if (abs < 86400) return rtf.format(Math.round(diffSec / 3600), "hour");
-    if (abs < 86400 * 7) return rtf.format(Math.round(diffSec / 86400), "day");
-    if (abs < 86400 * 30) return rtf.format(Math.round(diffSec / (86400 * 7)), "week");
-    if (abs < 86400 * 365) return rtf.format(Math.round(diffSec / (86400 * 30)), "month");
-    return rtf.format(Math.round(diffSec / (86400 * 365)), "year");
-  } catch {
-    return formatDate(iso);
-  }
-}
-
-/** @param {string} text */
-function inferTagGuess(text) {
-  const t = text.toLowerCase();
-  if (/passport|driver|license|sin card|identity|citizenship/.test(t)) return "Identity";
-  if (/hydro|utility|electric|water|gas bill/.test(t)) return "Utilities";
-  if (/lease|rent|landlord|tenant|housing/.test(t)) return "Housing";
-  if (/\bt4\b|tax return|income tax|irs|cra/.test(t)) return "Tax";
-  if (/bank|statement|cheque|check|finance|account/.test(t)) return "Finance";
-  if (/insurance|policy|premium|auto coverage/.test(t)) return "Insurance";
-  if (/diploma|degree|university|college|education/.test(t)) return "Education";
-  if (/whatsapp|telegram|signal|imessage|slack|discord|texted|fwd:|forwarded/.test(t)) return "Moments";
-  if (/screenshot|screen\s*shot|photo|camera|image|png|jpeg|jpg/.test(t)) return "Moments";
-  return "Identity";
-}
-
-/** @param {string} text */
-function inferTagForNote(text) {
-  const t = text.toLowerCase();
-  if (/whatsapp|telegram|signal|imessage|slack|discord|texted|fwd:|forwarded|dm /.test(t)) return "Moments";
-  return inferTagGuess(text);
-}
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function Toast({ message, onDone }) {
-  useEffect(() => {
-    const t = setTimeout(onDone, 2200);
-    return () => clearTimeout(t);
-  }, [onDone]);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 20, scale: 0.95 }}
-      className="toast-fixed"
-    >
-      {message}
-    </motion.div>
-  );
-}
-
-function RenameModal({ doc, onConfirm, onCancel }) {
-  const extMatch = doc.name.match(/(\.[^.]+)$/);
-  let ext = extMatch ? extMatch[1] : "";
-  if (doc.kind === "text") ext = ".txt";
-  else if (!ext) ext = doc.kind === "pdf" ? ".pdf" : "";
-  const baseInitial = ext ? doc.name.slice(0, doc.name.length - ext.length) : doc.name;
-  const [value, setValue] = useState(baseInitial);
-  const inputRef = useRef(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, []);
-
-  const handleKeyDown = (e) => {
-    const next = (value.trim() || "untitled") + ext;
-    if (e.key === "Enter")  onConfirm(next);
-    if (e.key === "Escape") onCancel();
-  };
-
-  return (
-    <>
-      <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(10px)", zIndex: 1300 }}
-        onClick={onCancel}
-      />
-      <motion.div
-        initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
-        style={{
-          position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
-          width: "calc(100% - 56px)", maxWidth: 400,
-          background: "#111", border: "1px solid #282828", borderRadius: 24, padding: 24, zIndex: 1400,
-        }}
-        role="dialog" aria-modal="true" aria-label="Rename item"
-      >
-        <div style={{ fontSize: 11, color: "#848480", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 16 }}>
-          Rename
-        </div>
-        <input
-          ref={inputRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-        style={{
-          width: "100%", boxSizing: "border-box",
-          background: "#1A1A1A", border: "1px solid #2a2a2a", borderRadius: 12,
-          padding: "10px 14px", color: "#EDECEA", fontSize: 16,
-          fontFamily: "'JetBrains Mono', monospace", outline: "none",
-        }}
-        />
-        <div style={{ fontSize: 10, color: "#3A3A38", marginTop: 8 }}>{ext ? `Keeps extension ${ext}` : "No extension enforced"}</div>
-        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-          <button
-            onClick={onCancel}
-            style={{
-              flex: 1, padding: "10px 0", borderRadius: 12, border: "1px solid #282828",
-              background: "transparent", color: "#848480", fontSize: 13, cursor: "pointer",
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => onConfirm((value.trim() || "untitled") + ext)}
-            style={{
-              flex: 1, padding: "10px 0", borderRadius: 12, border: "none",
-              background: "#C8963E", color: "#000", fontSize: 13, fontWeight: 600, cursor: "pointer",
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-          >
-            Save
-          </button>
-        </div>
-      </motion.div>
-    </>
-  );
-}
-
-function NoteModal({ onSave, onCancel }) {
-  const [body, setBody] = useState("");
-  const taRef = useRef(null);
-
-  useEffect(() => {
-    taRef.current?.focus();
-  }, []);
-
-  const handlePaste = async () => {
-    try {
-      const t = await navigator.clipboard.readText();
-      if (t) setBody((b) => (b ? `${b}\n${t}` : t));
-    } catch {
-      /* no permission */
-    }
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === "Escape") onCancel();
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      const t = body.trim();
-      if (t) onSave(t);
-    }
-  };
-
-  return (
-    <>
-      <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(10px)", zIndex: 1300 }}
-        onClick={onCancel}
-      />
-      <motion.div
-        initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
-        style={{
-          position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
-          width: "calc(100% - 56px)", maxWidth: 400,
-          background: "#111", border: "1px solid #282828", borderRadius: 24, padding: 24, zIndex: 1400,
-        }}
-        role="dialog" aria-modal="true" aria-label="New text note"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ fontSize: 11, color: "#848480", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
-          Text note
-        </div>
-        <div style={{ fontSize: 10, color: "#3A3A38", marginBottom: 12 }}>
-          Paste a message you would have sent yourself — like WhatsApp to self.
-        </div>
-        <textarea
-          ref={taRef}
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          onKeyDown={handleKeyDown}
-          rows={8}
-          placeholder="Type or paste…"
-          style={{
-            width: "100%", boxSizing: "border-box", resize: "vertical", minHeight: 140,
-            background: "#1A1A1A", border: "1px solid #2a2a2a", borderRadius: 12,
-            padding: "12px 14px", color: "#EDECEA", fontSize: 16,
-            fontFamily: "'JetBrains Mono', monospace", outline: "none",
-          }}
-        />
-        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-          <button
-            type="button"
-            onClick={handlePaste}
-            style={{
-              padding: "8px 14px", borderRadius: 12, border: "1px solid #282828",
-              background: "transparent", color: "#848480", fontSize: 12, cursor: "pointer",
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-          >
-            Paste from clipboard
-          </button>
-        </div>
-        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{
-              flex: 1, padding: "10px 0", borderRadius: 12, border: "1px solid #282828",
-              background: "transparent", color: "#848480", fontSize: 13, cursor: "pointer",
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => { const t = body.trim(); if (t) onSave(t); }}
-            style={{
-              flex: 1, padding: "10px 0", borderRadius: 12, border: "none",
-              background: "#5BC8C4", color: "#000", fontSize: 13, fontWeight: 600, cursor: "pointer",
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-          >
-            Save to vault
-          </button>
-        </div>
-      </motion.div>
-    </>
-  );
-}
-
-function ContextMenu({ doc, onAction, onClose }) {
-  const firstRef = useRef(null);
-
-  useEffect(() => {
-    firstRef.current?.focus();
-    const handler = (e) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
-
-  const actions = [
-    { label: "Summarize", icon: "≡", danger: false },
-    { label: "Share",    icon: "↑", danger: false },
-    { label: "Download", icon: "↓", danger: false },
-    { label: "Rename",   icon: "✎", danger: false },
-    { label: "Delete",   icon: "✕", danger: true  },
-  ];
-
-  return (
-    <>
-      <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(10px)", zIndex: 1100 }}
-        onClick={onClose}
-      />
-      <motion.div
-        initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-        transition={{ type: "spring", damping: 28, stiffness: 300 }}
-        className="settings-sheet-panel"
-        role="dialog" aria-modal="true" aria-label={`Actions for ${doc.name}`}
-      >
-        <div style={{ width: 36, height: 4, background: "#2a2a2a", borderRadius: 2, margin: "0 auto 20px" }} />
-        <div style={{ fontSize: 12, color: "#848480", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {doc.name}
-        </div>
-        <div style={{ fontSize: 10, color: "#3A3A38", marginBottom: 20 }}>{doc.date} · {doc.size}</div>
-        {actions.map((action, i) => (
-          <button
-            key={action.label}
-            ref={i === 0 ? firstRef : null}
-            onClick={() => onAction(action.label, doc)}
-            style={{
-              display: "flex", justifyContent: "space-between", alignItems: "center",
-              width: "100%", padding: "14px 0", background: "transparent",
-              border: "none", borderBottom: i < actions.length - 1 ? "1px solid #1A1A1A" : "none",
-              color: action.danger ? "#C86E8A" : "#EDECEA",
-              fontSize: 14, cursor: "pointer",
-              fontFamily: "'JetBrains Mono', monospace", textAlign: "left",
-            }}
-          >
-            <span>{action.label}</span>
-            <span style={{ fontSize: 16, opacity: 0.6 }}>{action.icon}</span>
-          </button>
-        ))}
-      </motion.div>
-    </>
-  );
-}
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -516,7 +135,6 @@ export default function Silo({ onOpenLists }) {
   const [noteModalOpen, setNoteModalOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [embeddingsById, setEmbeddingsById] = useState({});
-  const [queryVec, setQueryVec] = useState(null);
 
   const [contextMenu,   setContextMenu]   = useState(null);
   const [renameDoc,     setRenameDoc]     = useState(null);
@@ -546,7 +164,6 @@ export default function Silo({ onOpenLists }) {
   const pendingMergeFilesRef = useRef(null);
   const [shareListItems, setShareListItems] = useState([]);
   const [embeddingModelReady, setEmbeddingModelReady] = useState(false);
-  const [embeddingSearchBusy, setEmbeddingSearchBusy] = useState(false);
   const [sharePanelDismissed, setSharePanelDismissed] = useState(false);
   const [semanticSearchEnabled, setSemanticSearchEnabled] = useState(
     () => typeof localStorage !== "undefined" && localStorage.getItem("silo_semantic") !== "0",
@@ -821,16 +438,19 @@ export default function Silo({ onOpenLists }) {
     };
   }, [vaultPassphrase, vaultEpoch, semanticSearchEnabled]);
 
-  const searchIndex = useMemo(() => {
-    const rows = docs.map((d) => ({
-      id: d.id,
-      name: d.name,
-      tag: d.tag,
-      kind: d.kind || "pdf",
-      content: buildCombinedIndexText(d, contentById[d.id] ?? ""),
-    }));
-    return buildVaultSearchIndex(rows);
-  }, [docs, contentById]);
+  const {
+    display,
+    setQueryVec,
+    embeddingSearchBusy,
+  } = useVaultSearch({
+    docs,
+    contentById,
+    query,
+    activeTag,
+    smartView,
+    semanticSearchEnabled,
+    embeddingsById,
+  });
 
   // ── Demo docs: local embeddings for hybrid semantic search ──
   useEffect(() => {
@@ -855,91 +475,6 @@ export default function Silo({ onOpenLists }) {
     })();
     return () => { cancelled = true; };
   }, [semanticSearchEnabled]);
-
-  // ── Query embedding (debounced) for semantic leg of search ──
-  useEffect(() => {
-    const t = query.trim();
-    if (!t || !semanticSearchEnabled) {
-      setQueryVec(null);
-      setEmbeddingSearchBusy(false);
-      return;
-    }
-    setEmbeddingSearchBusy(true);
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      void (async () => {
-        try {
-          const { embedText } = await import("./vault/embeddings.js");
-          const v = await embedText(t);
-          if (!cancelled) setQueryVec(v);
-        } catch {
-          if (!cancelled) setQueryVec(null);
-        } finally {
-          if (!cancelled) setEmbeddingSearchBusy(false);
-        }
-      })();
-    }, 280);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [query, semanticSearchEnabled]);
-
-  const duplicateHashes = useMemo(() => {
-    const counts = new Map();
-    for (const d of docs) {
-      if (d.source !== "local" || !d.contentHash) continue;
-      counts.set(d.contentHash, (counts.get(d.contentHash) || 0) + 1);
-    }
-    const dup = new Set();
-    for (const [h, c] of counts) if (c > 1) dup.add(h);
-    return dup;
-  }, [docs]);
-
-  const duplicateFingerprints = useMemo(() => {
-    const counts = new Map();
-    for (const d of docs) {
-      if (d.source !== "local" || !d.textFingerprint) continue;
-      counts.set(d.textFingerprint, (counts.get(d.textFingerprint) || 0) + 1);
-    }
-    const dup = new Set();
-    for (const [h, c] of counts) if (c > 1) dup.add(h);
-    return dup;
-  }, [docs]);
-
-  // ── Filtered display data ──
-  const display = useMemo(() => {
-    const q = query.trim();
-    let idSet = null;
-    if (q) {
-      const textIds = searchIndex.matchingDocIds(q);
-      const hasEmb = Object.keys(embeddingsById).length > 0;
-      if (semanticSearchEnabled && queryVec && hasEmb) {
-        const vecIds = topMatchingDocIds(embeddingsById, queryVec, 0.28, 120);
-        idSet = mergeSearchIds(textIds, vecIds, 0.42);
-      } else {
-        idSet = textIds;
-      }
-    }
-    const filtered = docs.filter((d) => {
-      const tagOk = activeTag === "All" || d.tag === activeTag;
-      const idOk = idSet == null || idSet.has(String(d.id));
-      if (!tagOk || !idOk) return false;
-      if (!smartView) return true;
-      const sv = SMART_VIEWS.find((s) => s.id === smartView);
-      if (!sv) return true;
-      const ctx = { contentById, duplicateHashes, duplicateFingerprints };
-      return sv.match(d, ctx);
-    });
-    const tagOrder = Object.keys(TAG_META);
-    const extra = [...new Set(filtered.map((d) => d.tag))].filter((t) => !TAG_META[t]).sort();
-    const orderedTags = [...tagOrder.filter((t) => filtered.some((d) => d.tag === t)), ...extra];
-    return orderedTags.reduce((acc, tag) => {
-      const items = filtered.filter((doc) => doc.tag === tag);
-      if (items.length) acc[tag] = items;
-      return acc;
-    }, {});
-  }, [docs, activeTag, query, searchIndex, embeddingsById, queryVec, smartView, contentById, duplicateHashes, duplicateFingerprints, semanticSearchEnabled]);
 
   const hasResults = Object.keys(display).length > 0;
 
@@ -1747,6 +1282,7 @@ export default function Silo({ onOpenLists }) {
     rewrapAllVaultText,
     vaultPassphrase,
     showToast,
+    setQueryVec,
   ]);
 
   const handlePointerDown = useCallback((doc, e) => {

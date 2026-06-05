@@ -25,8 +25,8 @@
 
 | Phase | Status | Branch | PR |
 |-------|--------|--------|-----|
-| 1 — Baseline + data safety | ✅ Complete | `cursor/p0-data-safety-c74e` | pending |
-| 2 — App shell split | ⏳ Pending | — | — |
+| 1 — Baseline + data safety | ✅ Complete | `cursor/p0-data-safety-c74e` | #19 |
+| 2 — App shell split | ✅ Complete | `cursor/app-shell-split-c74e` | pending |
 | 3 — Onboarding / demo cleanup | ⏳ Pending | — | — |
 | 4 — iOS PWA hardening | ⏳ Pending | — | — |
 | 5 — Mobile UI redesign | ⏳ Pending | — | — |
