@@ -1,7 +1,9 @@
 import { useRef, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { DocumentCard } from "./DocumentCard.jsx";
+import { SwipeableDocRow } from "./SwipeableDocRow.jsx";
 import { explainSearchMatch } from "../lib/searchExplain.js";
+import { useMediaQuery } from "../hooks/useMediaQuery.js";
 
 /**
  * @param {{
@@ -9,11 +11,16 @@ import { explainSearchMatch } from "../lib/searchExplain.js";
  *   query: string,
  *   contentById: Record<string|number, string>,
  *   onDocOpen: (doc: object) => void,
+ *   onDocPreview?: (doc: object) => void,
  *   onPointerDown: (doc: object, e: import('react').PointerEvent) => void,
  *   onPointerUp: (doc: object) => void,
  *   onPointerCancel: () => void,
  *   onCardKeyDown: (doc: object, e: import('react').KeyboardEvent) => void,
  *   onSwipeDelete?: (doc: object) => void,
+ *   onSwipeMore?: (doc: object) => void,
+ *   onSwipeBackup?: (doc: object) => void,
+ *   onSwipePin?: (doc: object) => void,
+ *   pinnedIds?: Set<string>,
  *   cardVariant?: "compact" | "comfortable" | "searchResult" | "desktopRow",
  * }} props
  */
@@ -22,15 +29,21 @@ export function DocumentList({
   query,
   contentById,
   onDocOpen,
+  onDocPreview,
   onPointerDown,
   onPointerUp,
   onPointerCancel,
   onCardKeyDown,
   onSwipeDelete,
-  cardVariant = "comfortable",
+  onSwipeMore,
+  onSwipeBackup,
+  onSwipePin,
+  pinnedIds,
+  cardVariant: cardVariantProp,
 }) {
   const parentRef = useRef(null);
-  const touchRef = useRef(/** @type {{ id: string|number, x: number } | null} */ (null));
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
+  const cardVariant = cardVariantProp ?? (isDesktop ? "desktopRow" : "comfortable");
 
   const flatRows = useMemo(() => {
     const rows = [];
@@ -43,17 +56,28 @@ export function DocumentList({
     return rows;
   }, [display]);
 
-  const count = flatRows.length;
+  const rowHeight = cardVariant === "desktopRow" ? 68 : cardVariant === "compact" ? 84 : 96;
 
   const virtualizer = useVirtualizer({
-    count,
+    count: flatRows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: (i) => (flatRows[i]?.type === "header" ? 32 : 96),
+    estimateSize: (i) => (flatRows[i]?.type === "header" ? 36 : rowHeight),
     overscan: 8,
   });
 
   return (
-    <div className="doc-list doc-list--virtual" ref={parentRef}>
+    <div className={`doc-list doc-list--virtual ${cardVariant === "desktopRow" ? "doc-list--desktop" : ""}`} ref={parentRef}>
+      {cardVariant === "desktopRow" && (
+        <div className="doc-list__table-head" aria-hidden>
+          <span>Type</span>
+          <span>Name</span>
+          <span>Tag</span>
+          <span>Size</span>
+          <span>Date</span>
+          <span>Storage</span>
+          <span>Actions</span>
+        </div>
+      )}
       <div
         style={{
           height: `${virtualizer.getTotalSize()}px`,
@@ -79,34 +103,32 @@ export function DocumentList({
               {row.type === "header" ? (
                 <div className="doc-list__section-label">{row.tag}</div>
               ) : (
-                <div
-                  role="presentation"
-                  onPointerDown={(e) => onPointerDown(row.doc, e)}
-                  onPointerUp={() => onPointerUp(row.doc)}
-                  onPointerCancel={onPointerCancel}
-                  onTouchStart={(e) => {
-                    const t = e.touches[0];
-                    if (t) touchRef.current = { id: row.doc.id, x: t.clientX };
-                  }}
-                  onTouchEnd={(e) => {
-                    const start = touchRef.current;
-                    touchRef.current = null;
-                    if (!start || start.id !== row.doc.id || !onSwipeDelete) return;
-                    const t = e.changedTouches[0];
-                    if (!t) return;
-                    if (t.clientX - start.x < -72) onSwipeDelete(row.doc);
-                  }}
+                <SwipeableDocRow
+                  pinned={pinnedIds?.has(String(row.doc.id))}
+                  onSwipeDelete={onSwipeDelete ? () => onSwipeDelete(row.doc) : undefined}
+                  onSwipeMore={onSwipeMore ? () => onSwipeMore(row.doc) : undefined}
+                  onSwipeBackup={onSwipeBackup ? () => onSwipeBackup(row.doc) : undefined}
+                  onSwipePin={onSwipePin ? () => onSwipePin(row.doc) : undefined}
                 >
-                  <DocumentCard
-                    doc={row.doc}
-                    variant={cardVariant}
-                    query={query}
-                    snippet={query.trim() ? (contentById[row.doc.id] ?? "").slice(0, 160) : ""}
-                    matchReason={query.trim() ? explainSearchMatch(row.doc, query, contentById[row.doc.id]) : null}
-                    onActivate={() => onDocOpen(row.doc)}
-                    onKeyNav={onCardKeyDown}
-                  />
-                </div>
+                  <div
+                    role="presentation"
+                    onPointerDown={(e) => onPointerDown(row.doc, e)}
+                    onPointerUp={() => onPointerUp(row.doc)}
+                    onPointerCancel={onPointerCancel}
+                  >
+                    <DocumentCard
+                      doc={row.doc}
+                      variant={cardVariant}
+                      query={query}
+                      snippet={query.trim() ? (contentById[row.doc.id] ?? "").slice(0, 160) : ""}
+                      matchReason={query.trim() ? explainSearchMatch(row.doc, query, contentById[row.doc.id]) : null}
+                      onActivate={() => onDocOpen(row.doc)}
+                      onPreview={onDocPreview ? () => onDocPreview(row.doc) : undefined}
+                      onMore={onSwipeMore ? () => onSwipeMore(row.doc) : undefined}
+                      onKeyNav={onCardKeyDown}
+                    />
+                  </div>
+                </SwipeableDocRow>
               )}
             </div>
           );

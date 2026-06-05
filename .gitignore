@@ -23,4 +23,4 @@ _pages
 *.njsproj
 *.sln
 *.sw?
-lhr.json
+artifacts/

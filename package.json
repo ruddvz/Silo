@@ -12,6 +12,8 @@
     "analyze": "vite build --mode analyze 2>&1 | tail -20",
     "a11y": "vite preview --host 127.0.0.1 --port 4173 & sleep 2 && npx axe http://127.0.0.1:4173/Silo/ --exit; code=$?; kill %1 2>/dev/null; exit $code",
     "test:a11y": "npm run a11y",
+    "test:render": "node scripts/check-render.mjs",
+    "test:visual": "node scripts/visual-qa.mjs",
     "gen:icons": "node scripts/gen-pwa-icons.mjs",
     "preview": "vite preview"
   },

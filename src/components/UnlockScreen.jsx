@@ -23,9 +23,9 @@ export function UnlockScreen({ onUnlock, onSkip, error }) {
     >
       <div className="unlock-card">
         <img src={APP_ICON_SRC} alt="" width={64} height={64} className="unlock-logo" />
-        <h1 className="unlock-title">Locked vault</h1>
+        <h1 className="unlock-title">Unlock Silo</h1>
         <p className="unlock-body">
-          Enter your passphrase to unlock indexed text for search and previews. Original files stay on this device.
+          Your index is protected on this device. Enter your passphrase to search and preview extracted text.
         </p>
 
         <div className="unlock-field">
@@ -61,7 +61,7 @@ export function UnlockScreen({ onUnlock, onSkip, error }) {
 
         <div className="unlock-actions">
           <button type="button" className="btn btn--accent" onClick={() => onUnlock(passphrase)}>
-            Unlock vault
+            Unlock
           </button>
           {onSkip && (
             <button type="button" className="btn btn--ghost" onClick={onSkip}>

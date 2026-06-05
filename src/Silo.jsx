@@ -146,6 +146,24 @@ export default function Silo({ onOpenLists }) {
     /** @type {{ docId: string, fileName: string, vault: FileSystemDirectoryHandle } | null} */ (null),
   );
 
+  const [pinnedIds, setPinnedIds] = useState(() => {
+    try {
+      const raw = localStorage.getItem("silo_pinned");
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  const persistPinned = useCallback((next) => {
+    setPinnedIds(next);
+    try {
+      localStorage.setItem("silo_pinned", JSON.stringify([...next]));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const storageMode = useStorageMode();
   const { showBanner: showInstallBanner, deferredPrompt, install: pwaInstall, dismiss: dismissInstallBanner } = usePWAInstall();
   const { updateReady, reloadToUpdate, dismissUpdate } = usePwaLifecycle();
@@ -230,6 +248,18 @@ export default function Silo({ onOpenLists }) {
   }, []);
 
   const showToast = useCallback((msg) => setToast(msg), []);
+
+  const handleTogglePin = useCallback((doc) => {
+    const id = String(doc.id);
+    persistPinned((prev) => {
+      const next = new Set(prev);
+      const wasPinned = next.has(id);
+      if (wasPinned) next.delete(id);
+      else next.add(id);
+      showToast(wasPinned ? "Unpinned" : "Pinned to top");
+      return next;
+    });
+  }, [persistPinned, showToast]);
 
   /** Pull-to-refresh vault list on narrow viewports (reload manifest + OPFS rows). */
   useEffect(() => {
@@ -801,7 +831,7 @@ export default function Silo({ onOpenLists }) {
     }
   }, [ensureVault, ingestFromFile]);
 
-  const handleSaveTextNote = useCallback(async (rawText) => {
+  const handleSaveTextNote = useCallback(async (rawText, meta) => {
     const text = rawText.trim();
     if (!text) return;
     const vault = await ensureVault();
@@ -815,8 +845,10 @@ export default function Silo({ onOpenLists }) {
     try {
       const id = crypto.randomUUID();
       const preview = text.slice(0, 40).replace(/\s+/g, " ");
-      const name = `Note — ${preview}${text.length > 40 ? "…" : ""}.txt`;
-      const tag = inferTagForNote(text);
+      const name = meta?.title
+        ? `${meta.title}.txt`
+        : `Note — ${preview}${text.length > 40 ? "…" : ""}.txt`;
+      const tag = meta?.tag && meta.tag !== "Unsorted" ? meta.tag : inferTagForNote(text);
       const createdAt = new Date().toISOString();
       const enc = new TextEncoder();
       const sizeBytes = enc.encode(text).length;
@@ -1401,6 +1433,14 @@ export default function Silo({ onOpenLists }) {
 
   const handleAction = useCallback((action, doc) => {
     setContextMenu(null);
+    if (action === "Open") {
+      void handleOpenDoc(doc);
+      return;
+    }
+    if (action === "Preview") {
+      setPreviewDoc(doc);
+      return;
+    }
     if (action === "Summarize") {
       const body = contentById[doc.id] || "";
       const s = summarizeExtractive(body, 400);
@@ -1416,7 +1456,7 @@ export default function Silo({ onOpenLists }) {
     if (action === "Download") {
       handleDownloadDoc(doc);
     }
-  }, [showToast, contentById, handleDownloadDoc]);
+  }, [showToast, contentById, handleDownloadDoc, handleOpenDoc]);
 
   const handleRename = useCallback(async (renamedDoc, newName) => {
     const docId = renamedDoc.id;
@@ -1503,6 +1543,23 @@ export default function Silo({ onOpenLists }) {
       showToast("Clipboard access denied");
     }
   }, [handleSaveTextNote, showToast]);
+
+  const listCallbacks = {
+    onDocOpen: handlePointerUp,
+    onDocPreview: (d) => setPreviewDoc(d),
+    onPointerDown: handlePointerDown,
+    onPointerUp: handlePointerUp,
+    onPointerCancel: handlePointerCancel,
+    onSwipeDelete: (d) => setConfirmDeleteDoc(d),
+    onSwipeMore: (d) => setContextMenu({ doc: d }),
+    onSwipeBackup: () => {
+      setSettingsOpen(true);
+      showToast("Export a backup ZIP from Settings");
+    },
+    onSwipePin: handleTogglePin,
+    pinnedIds,
+    onCardKeyDown: handleCardKeyDown,
+  };
 
   useEffect(() => {
     if (mobileTab === "search") {
@@ -1763,17 +1820,12 @@ export default function Silo({ onOpenLists }) {
               embeddingModelReady={embeddingModelReady}
               searchFilter={searchFilter}
               onSearchFilter={setSearchFilter}
-              onDocOpen={handlePointerUp}
-              onPointerDown={handlePointerDown}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerCancel}
-              onSwipeDelete={(d) => setConfirmDeleteDoc(d)}
-              onCardKeyDown={handleCardKeyDown}
               onAddNote={() => setNoteModalOpen(true)}
               onClearSearch={() => {
                 setQuery("");
                 setQueryVec(null);
               }}
+              {...listCallbacks}
             />
           </div>
 
@@ -1799,12 +1851,7 @@ export default function Silo({ onOpenLists }) {
             emptyVariant={emptyVariant}
             ingestBusy={ingestBusy}
             onOpenCapture={() => setIngestDialogOpen(true)}
-            onDocOpen={handlePointerUp}
-            onPointerDown={handlePointerDown}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerCancel}
-            onSwipeDelete={(d) => setConfirmDeleteDoc(d)}
-            onCardKeyDown={handleCardKeyDown}
+            {...listCallbacks}
           />
           <input
             ref={backupImportRef}
@@ -1889,7 +1936,7 @@ export default function Silo({ onOpenLists }) {
       <AnimatePresence>
         {noteModalOpen && (
           <NoteModal
-            onSave={(t) => { void handleSaveTextNote(t); }}
+            onSave={(t, meta) => { void handleSaveTextNote(t, meta); }}
             onCancel={() => setNoteModalOpen(false)}
           />
         )}

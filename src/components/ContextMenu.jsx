@@ -1,8 +1,23 @@
 import { useEffect, useRef } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
+import { SPRING_GENTLE, useReducedMotion } from "../design/motion.js";
+import { IconFile, IconSearch } from "./ui/icons.jsx";
 
+const ACTIONS = [
+  { id: "Open", label: "Open", Icon: IconFile },
+  { id: "Preview", label: "Preview", Icon: IconSearch },
+  { id: "Rename", label: "Rename", Icon: null },
+  { id: "Download", label: "Export original", Icon: null },
+  { id: "Summarize", label: "Re-index summary", Icon: null },
+  { id: "Delete", label: "Delete", Icon: null, danger: true },
+];
+
+/**
+ * @param {{ doc: object, onAction: (action: string, doc: object) => void, onClose: () => void }} props
+ */
 export function ContextMenu({ doc, onAction, onClose }) {
   const firstRef = useRef(null);
+  const reduced = useReducedMotion();
 
   useEffect(() => {
     firstRef.current?.focus();
@@ -13,69 +28,51 @@ export function ContextMenu({ doc, onAction, onClose }) {
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  const actions = [
-    { label: "Summarize", icon: "≡", danger: false },
-    { label: "Share", icon: "↑", danger: false },
-    { label: "Download", icon: "↓", danger: false },
-    { label: "Rename", icon: "✎", danger: false },
-    { label: "Delete", icon: "✕", danger: true },
-  ];
-
   return (
-    <>
+    <AnimatePresence>
       <motion.div
+        className="sheet-backdrop"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(10px)", zIndex: 1100 }}
         onClick={onClose}
+        aria-hidden
       />
       <motion.div
-        initial={{ y: "100%" }}
-        animate={{ y: 0 }}
-        exit={{ y: "100%" }}
-        transition={{ type: "spring", damping: 28, stiffness: 300 }}
-        className="settings-sheet-panel"
+        className="action-sheet"
         role="dialog"
         aria-modal="true"
         aria-label={`Actions for ${doc.name}`}
+        initial={reduced ? false : { y: "100%" }}
+        animate={{ y: 0 }}
+        exit={reduced ? undefined : { y: "100%" }}
+        transition={SPRING_GENTLE}
       >
-        <div style={{ width: 36, height: 4, background: "#2a2a2a", borderRadius: 2, margin: "0 auto 20px" }} />
-        <div style={{ fontSize: 12, color: "#848480", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {doc.name}
+        <div className="sheet-handle" aria-hidden />
+        <div className="action-sheet__header">
+          <p className="action-sheet__filename">{doc.name}</p>
+          <p className="action-sheet__meta">
+            {[doc.tag, doc.date, doc.size].filter(Boolean).join(" · ")}
+          </p>
         </div>
-        <div style={{ fontSize: 10, color: "#3A3A38", marginBottom: 20 }}>
-          {doc.date}
-          {" · "}
-          {doc.size}
+        <div className="action-sheet__list">
+          {ACTIONS.map((action, i) => (
+            <button
+              key={action.id}
+              ref={i === 0 ? firstRef : null}
+              type="button"
+              className={`action-sheet__row ${action.danger ? "action-sheet__row--danger" : ""}`}
+              onClick={() => onAction(action.id, doc)}
+            >
+              {action.Icon && <action.Icon size={18} />}
+              <span>{action.label}</span>
+            </button>
+          ))}
         </div>
-        {actions.map((action, i) => (
-          <button
-            key={action.label}
-            ref={i === 0 ? firstRef : null}
-            type="button"
-            onClick={() => onAction(action.label, doc)}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              width: "100%",
-              padding: "14px 0",
-              background: "transparent",
-              border: "none",
-              borderBottom: i < actions.length - 1 ? "1px solid #1A1A1A" : "none",
-              color: action.danger ? "#C86E8A" : "#EDECEA",
-              fontSize: 14,
-              cursor: "pointer",
-              fontFamily: "'JetBrains Mono', monospace",
-              textAlign: "left",
-            }}
-          >
-            <span>{action.label}</span>
-            <span style={{ fontSize: 16, opacity: 0.6 }}>{action.icon}</span>
-          </button>
-        ))}
+        <button type="button" className="btn btn--ghost action-sheet__cancel" onClick={onClose}>
+          Cancel
+        </button>
       </motion.div>
-    </>
+    </AnimatePresence>
   );
 }
