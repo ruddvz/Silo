@@ -18,8 +18,9 @@ import { ListsPrivacyBanner } from "./components/ListsPrivacyBanner.jsx";
 
 /**
  * Silo Lists — shared checklist files for two people.
+ * @param {{ onBackToVault?: () => void }} props
  */
-export default function ListsApp() {
+export default function ListsApp({ onBackToVault }) {
   const { mode: themeMode, setMode: setTheme, resolved } = useTheme();
   const [user, setUser] = useState(null);
   const [space, setSpaceState] = useState(null);
@@ -91,6 +92,10 @@ export default function ListsApp() {
   }
 
   function goVault() {
+    if (onBackToVault) {
+      onBackToVault();
+      return;
+    }
     window.location.hash = "";
     window.location.reload();
   }

@@ -8,9 +8,9 @@
   left: 0;
   right: 0;
   padding: calc(var(--safe-top) + 8px) var(--app-horizontal-padding) 8px;
-  background: rgba(9, 11, 15, 0.72);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
+  background: var(--silo-surface);
+  backdrop-filter: var(--silo-blur);
+  -webkit-backdrop-filter: var(--silo-blur);
   border-bottom: 1px solid var(--silo-line);
 }
 
@@ -106,10 +106,10 @@
   padding: 8px;
   border: 1px solid var(--silo-line-strong);
   border-radius: var(--radius-pill);
-  background: rgba(20, 24, 32, 0.76);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  box-shadow: var(--shadow-nav);
+  background: var(--silo-surface);
+  backdrop-filter: var(--silo-blur);
+  -webkit-backdrop-filter: var(--silo-blur);
+  box-shadow: var(--silo-shadow-md);
 }
 
 .silo-tab {
@@ -131,16 +131,38 @@
 }
 
 .silo-tab--active {
-  color: var(--silo-text);
-  background: rgba(255, 255, 255, 0.09);
+  color: var(--silo-accent);
+  background: var(--silo-accent-soft);
 }
 
 .silo-tab--capture {
   transform: translateY(-10px);
   min-height: 58px;
-  color: #15110a;
+  color: #fff;
   background: linear-gradient(180deg, var(--silo-accent-2), var(--silo-accent));
-  box-shadow: 0 16px 36px rgba(214, 168, 79, 0.26);
+  box-shadow: 0 16px 36px rgba(79, 109, 245, 0.32);
+}
+
+.silo-tab__icon-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.silo-tab__badge {
+  position: absolute;
+  top: -6px;
+  right: -10px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--silo-radius-pill);
+  background: var(--silo-danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--silo-surface-solid);
 }
 
 .silo-tab__label {
@@ -344,26 +366,79 @@
   }
 }
 
-/* ── Home status card ── */
+/* ── Home hero card ── */
 .home-status-card {
-  padding: var(--space-5);
-  border-radius: var(--radius-lg);
-  background: var(--silo-surface-solid);
+  min-height: 178px;
+  padding: var(--silo-space-6);
+  border-radius: var(--silo-radius-2xl);
+  background:
+    linear-gradient(145deg, rgba(79, 109, 245, 0.14), rgba(111, 93, 246, 0.08)),
+    var(--silo-card);
   border: 1px solid var(--silo-line);
-  box-shadow: var(--shadow-card);
-  margin-bottom: var(--space-5);
+  box-shadow: var(--silo-shadow-md), var(--silo-shadow-inset);
+  margin-bottom: var(--silo-space-5);
+}
+
+.home-status-card__pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: var(--silo-radius-pill);
+  background: var(--silo-accent-soft);
+  color: var(--silo-accent);
+  font-size: 12px;
+  font-weight: 650;
+  margin-bottom: var(--silo-space-3);
 }
 
 .home-status-card__title {
-  margin: 0 0 var(--space-1);
-  font-size: var(--text-title-3);
-  font-weight: var(--weight-bold);
+  margin: 0 0 var(--silo-space-2);
+  font-size: clamp(1.875rem, 5vw, 2.125rem);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: var(--tracking-tight);
+}
+
+.home-status-card__body {
+  margin: 0 0 var(--silo-space-4);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--silo-muted);
+  max-width: 36ch;
 }
 
 .home-status-card__meta {
-  margin: 0 0 var(--space-4);
+  margin: 0;
   font-size: var(--text-footnote);
-  color: var(--silo-text-3);
+  color: var(--silo-muted);
+}
+
+.home-status-card__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--silo-space-2);
+  margin-top: var(--silo-space-4);
+}
+
+.home-status-card__stat {
+  padding: var(--silo-space-2) var(--silo-space-3);
+  border-radius: var(--silo-radius-md);
+  background: var(--silo-surface-raised);
+  border: 1px solid var(--silo-line);
+}
+
+.home-status-card__stat-value {
+  display: block;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--silo-ink);
+}
+
+.home-status-card__stat-label {
+  display: block;
+  font-size: 11px;
+  color: var(--silo-muted);
+  margin-top: 2px;
 }
 
 .home-search-entry {
@@ -372,18 +447,18 @@
 
 .home-search-entry__btn {
   width: 100%;
-  min-height: 52px;
-  border-radius: var(--radius-md);
+  min-height: 58px;
+  border-radius: var(--silo-radius-lg);
   border: 1px solid var(--silo-line);
-  background: var(--silo-surface-solid);
-  color: var(--silo-text-3);
+  background: var(--silo-surface-raised);
+  color: var(--silo-muted);
   font: inherit;
   font-size: var(--text-body);
   text-align: left;
-  padding: 0 var(--space-4);
+  padding: 0 var(--silo-space-4);
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--silo-space-3);
   cursor: pointer;
 }
 

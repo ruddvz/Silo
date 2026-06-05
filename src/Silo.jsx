@@ -1129,6 +1129,30 @@ export default function Silo({ onOpenLists }) {
     }
   }, [passphraseModal, vaultPassphrase, rewrapAllVaultText, showToast]);
 
+  const handleClearSemanticIndex = useCallback(async () => {
+    const vault = vaultRef.current;
+    if (!vault) {
+      showToast("No vault");
+      return;
+    }
+    setIngestBusy(true);
+    try {
+      const entries = await loadManifest(vault);
+      await clearAllEmbeddingsForVault(vault);
+      setEmbeddingsById((prev) => {
+        const next = { ...prev };
+        for (const e of entries) delete next[String(e.id)];
+        return next;
+      });
+      showToast("Semantic embeddings cleared");
+    } catch (e) {
+      console.error(e);
+      showToast("Could not clear embeddings");
+    } finally {
+      setIngestBusy(false);
+    }
+  }, [showToast]);
+
   const settingsActions = useMemo(() => [
     {
       id: "lists",
@@ -1277,30 +1301,6 @@ export default function Silo({ onOpenLists }) {
     } catch (err) {
       console.error(err);
       showToast(err?.message || "Could not delete item.");
-    }
-  }, [showToast]);
-
-  const handleClearSemanticIndex = useCallback(async () => {
-    const vault = vaultRef.current;
-    if (!vault) {
-      showToast("No vault");
-      return;
-    }
-    setIngestBusy(true);
-    try {
-      const entries = await loadManifest(vault);
-      await clearAllEmbeddingsForVault(vault);
-      setEmbeddingsById((prev) => {
-        const next = { ...prev };
-        for (const e of entries) delete next[String(e.id)];
-        return next;
-      });
-      showToast("Semantic embeddings cleared");
-    } catch (e) {
-      console.error(e);
-      showToast("Could not clear embeddings");
-    } finally {
-      setIngestBusy(false);
     }
   }, [showToast]);
 
@@ -1612,6 +1612,17 @@ export default function Silo({ onOpenLists }) {
           tags={ALL_TAGS}
           activeTag={activeTag}
           smartView={smartView}
+          activeTab={mobileTab}
+          storageLabel={vaultStatusLabel}
+          backupLabel={lastBackupExport ? `Last backup ${lastBackupExport}` : "No backup yet"}
+          onTab={(id) => {
+            if (id === "add") {
+              setIngestDialogOpen(true);
+              return;
+            }
+            setMobileTab(id);
+            bumpMeaningfulInteraction();
+          }}
           onTag={(t) => {
             setActiveTag(t);
             bumpMeaningfulInteraction();
@@ -1625,6 +1636,7 @@ export default function Silo({ onOpenLists }) {
             setSettingsOpen(true);
             bumpMeaningfulInteraction();
           }}
+          onOpenLists={onOpenLists}
         />
       </div>
 
@@ -1838,6 +1850,7 @@ export default function Silo({ onOpenLists }) {
 
       <BottomNav
         activeTab={mobileTab}
+        badgeCount={importQueueCount}
         onTabChange={(id) => {
           setMobileTab(id);
           bumpMeaningfulInteraction();

@@ -35,7 +35,7 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
       },
       devOptions: {
-        enabled: true,
+        enabled: false,
         type: "module",
       },
     }),
@@ -53,6 +53,7 @@ export default defineConfig({
           if (id.includes("node_modules/pdfjs-dist")) return "pdf";
           if (id.includes("node_modules/tesseract.js")) return "ocr";
           if (id.includes("node_modules/@tanstack/react-virtual")) return "virtual";
+          if (id.includes("node_modules/@xenova/transformers")) return "transformers";
         },
       },
     },

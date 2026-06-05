@@ -13,9 +13,10 @@ const TABS = [
  *   activeTab: string,
  *   onTabChange: (id: string) => void,
  *   onCapture: () => void,
+ *   badgeCount?: number,
  * }} props
  */
-export function SiloBottomNav({ activeTab, onTabChange, onCapture }) {
+export function SiloBottomNav({ activeTab, onTabChange, onCapture, badgeCount = 0 }) {
   const resolved = activeTab === "browse" ? "vault" : activeTab;
 
   return (
@@ -34,7 +35,14 @@ export function SiloBottomNav({ activeTab, onTabChange, onCapture }) {
               aria-current={isActive ? "page" : undefined}
               aria-label={tab.label}
             >
-              <Icon size={isCapture ? 24 : 20} />
+              <span className="silo-tab__icon-wrap">
+                <Icon size={isCapture ? 24 : 20} />
+                {isCapture && badgeCount > 0 && (
+                  <span className="silo-tab__badge" aria-label={`${badgeCount} pending imports`}>
+                    {badgeCount > 9 ? "9+" : badgeCount}
+                  </span>
+                )}
+              </span>
               {!isCapture && <span className="silo-tab__label">{tab.label}</span>}
             </button>
           );

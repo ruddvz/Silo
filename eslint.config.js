@@ -5,7 +5,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 
 export default [
-  { ignores: ["dist", "src/sw.js"] },
+  { ignores: ["dist", "_pages", "src/sw.js"] },
   {
     files: ["vite.config.js"],
     languageOptions: {

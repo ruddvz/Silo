@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#0f0f10" media="(prefers-color-scheme: dark)" />
-    <meta name="theme-color" content="#f0eff4" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#f4f7fb" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#080b12" media="(prefers-color-scheme: dark)" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -15,20 +15,58 @@
     <link rel="apple-touch-icon" sizes="512x512" href="/icons/icon-512.png" />
     <link rel="apple-touch-startup-image" href="/splash/iphone-portrait.png" media="(orientation: portrait)" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300..600;1,9..40,300..400&display=swap"
-      rel="stylesheet"
-    />
     <title>Silo — Private Vault</title>
     <meta
       name="description"
-      content="Local-first document vault. PDFs, images, notes — searched, stored, on your device."
+      content="Private local-first vault for files, notes, screenshots, and voice memos."
     />
+    <style>
+      .silo-boot-fallback {
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background: #f4f7fb;
+        color: #07111f;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+      }
+      .silo-boot-icon {
+        width: 64px;
+        height: 64px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, #4f6df5, #6f5df6);
+        color: #fff;
+        display: grid;
+        place-items: center;
+        font-size: 28px;
+        font-weight: 700;
+        box-shadow: 0 10px 30px rgba(79, 109, 245, 0.28);
+      }
+      .silo-boot-fallback p {
+        margin: 0;
+        font-size: 15px;
+        color: #667085;
+      }
+      @media (prefers-color-scheme: dark) {
+        .silo-boot-fallback {
+          background: #080b12;
+          color: #f8fafc;
+        }
+        .silo-boot-fallback p {
+          color: #a1a8b5;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="silo-boot-fallback">
+        <div class="silo-boot-icon">S</div>
+        <p>Opening Silo…</p>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

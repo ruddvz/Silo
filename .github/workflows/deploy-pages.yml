@@ -14,7 +14,7 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -27,14 +27,16 @@ jobs:
           node-version: "22"
           cache: npm
 
-      - name: Install and build
+      - name: Install, lint, and build
         env:
-          # Project Pages base path (must match repo name for default gh-pages URL)
           VITE_BASE_URL: /${{ github.event.repository.name }}/
         run: |
           npm ci
+          npm run lint
           npm run gen:icons
           npm run build
+
+      - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v4
         with:
@@ -48,4 +50,4 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - id: deploy
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@v4

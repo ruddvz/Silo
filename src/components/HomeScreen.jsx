@@ -55,21 +55,38 @@ export function HomeScreen({
     <div className="home-screen">
       <div className="home-screen__left">
         <section className="home-status-card" aria-label="Vault status">
-          <h2 className="home-status-card__title">
-            {backupRecommended ? "Backup recommended" : vaultStatusLabel}
-          </h2>
-          <p className="home-status-card__meta">{vaultMeta}</p>
+          <div className="home-status-card__pill">{vaultStatusLabel}</div>
+          <h2 className="home-status-card__title">Your private vault</h2>
+          <p className="home-status-card__body">
+            {docs.length === 0
+              ? "Save your first file, note, photo, or voice memo. Silo keeps it searchable on this device."
+              : `${docs.length} items indexed locally. ${backupRecommended ? "Consider backing up soon." : vaultMeta.split("·").slice(1).join("·").trim() || "Everything stays on this device."}`}
+          </p>
           {backupRecommended && (
             <Button variant="secondary" size="sm" onClick={onBackup}>
               Back up now
             </Button>
           )}
+          <div className="home-status-card__stats">
+            <div className="home-status-card__stat">
+              <span className="home-status-card__stat-value">{docs.length}</span>
+              <span className="home-status-card__stat-label">Items</span>
+            </div>
+            <div className="home-status-card__stat">
+              <span className="home-status-card__stat-value">{Object.keys(contentById).length}</span>
+              <span className="home-status-card__stat-label">Indexed</span>
+            </div>
+            <div className="home-status-card__stat">
+              <span className="home-status-card__stat-value">{backupRecommended ? "None" : "Saved"}</span>
+              <span className="home-status-card__stat-label">Backup</span>
+            </div>
+          </div>
         </section>
 
         <div className="home-search-entry">
           <button type="button" className="home-search-entry__btn" onClick={onSearch}>
             <IconSearch size={18} />
-            Search anything in Silo
+            Search files, notes, text, screenshots…
           </button>
         </div>
 

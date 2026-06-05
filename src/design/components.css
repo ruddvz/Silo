@@ -1,0 +1,96 @@
+.silo-glass {
+  background: var(--silo-surface);
+  border: 1px solid var(--silo-line);
+  box-shadow: var(--silo-shadow-sm), var(--silo-shadow-inset);
+  -webkit-backdrop-filter: var(--silo-blur);
+  backdrop-filter: var(--silo-blur);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .silo-glass {
+    background: var(--silo-surface-solid);
+  }
+}
+
+.silo-btn {
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: var(--silo-radius-md);
+  border: 1px solid transparent;
+  font-size: 15px;
+  font-weight: 650;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform var(--silo-fast) var(--silo-ease), background var(--silo-fast) var(--silo-ease);
+}
+
+.silo-btn:active {
+  transform: scale(0.98);
+}
+
+.silo-btn--primary {
+  background: linear-gradient(135deg, var(--silo-accent), var(--silo-accent-2));
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(79, 109, 245, 0.28);
+}
+
+.silo-btn--secondary {
+  background: var(--silo-surface-raised);
+  border-color: var(--silo-line);
+  color: var(--silo-ink);
+}
+
+.silo-btn--ghost {
+  background: transparent;
+  color: var(--silo-muted);
+}
+
+.silo-error-boundary {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--silo-space-6);
+  background:
+    radial-gradient(circle at 16% 0%, rgba(79, 109, 245, 0.16), transparent 30%),
+    linear-gradient(180deg, var(--silo-bg), var(--silo-bg-2));
+}
+
+.silo-error-boundary__card {
+  max-width: 420px;
+  width: 100%;
+  padding: var(--silo-space-8);
+  border-radius: var(--silo-radius-2xl);
+  text-align: center;
+}
+
+.silo-error-boundary__icon {
+  width: 72px;
+  height: 72px;
+  margin: 0 auto var(--silo-space-4);
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--silo-accent), var(--silo-accent-2));
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.silo-error-boundary h1 {
+  margin: 0 0 var(--silo-space-3);
+  font: var(--type-title-2);
+}
+
+.silo-error-boundary p {
+  margin: 0 0 var(--silo-space-6);
+  color: var(--silo-muted);
+  font: var(--type-callout);
+}
+
+.silo-error-boundary__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--silo-space-3);
+}
