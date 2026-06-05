@@ -1891,7 +1891,10 @@ html[data-display-mode="standalone"] .bottom-nav {
 }
 
 .home-screen {
-  padding: 0 var(--space-4) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0 var(--silo-mobile-pad-x) var(--space-6);
 }
 
 .home-screen__status {
@@ -1971,51 +1974,67 @@ html[data-display-mode="standalone"] .bottom-nav {
 }
 
 .quick-capture {
-  padding: var(--space-5);
-  border-radius: var(--radius-xl);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  padding: 18px;
+  border-radius: 28px;
+  background: var(--silo-card);
+  border: 1px solid var(--silo-line);
+  box-shadow: var(--silo-shadow-sm);
+  margin-bottom: var(--silo-space-5);
 }
 
 .quick-capture__title {
   margin: 0 0 var(--space-1);
-  font-family: var(--font-display);
-  font-size: var(--text-lg);
+  font-size: var(--text-title-3);
+  font-weight: var(--weight-bold);
 }
 
 .quick-capture__lead {
   margin: 0 0 var(--space-4);
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  font-size: 14px;
+  color: var(--silo-muted);
 }
 
 .quick-capture__grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: var(--space-2);
+  gap: 10px;
+}
+
+@media (min-width: 900px) {
+  .quick-capture__grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
 }
 
 .quick-capture__btn {
-  min-height: 52px;
+  min-height: 74px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-2);
-  color: var(--color-text-primary);
-  font-size: var(--text-sm);
+  gap: 6px;
+  border-radius: 22px;
+  border: 1px solid var(--silo-line);
+  background: var(--silo-surface-raised);
+  color: var(--silo-ink);
+  font-size: 14px;
+  font-weight: 650;
   cursor: pointer;
 }
 
 .quick-capture__btn:disabled {
-  opacity: 0.5;
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .quick-capture__icon {
-  font-size: 1.25rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: var(--silo-accent-soft);
+  color: var(--silo-accent);
+  display: grid;
+  place-items: center;
 }
 
 .backup-panel {

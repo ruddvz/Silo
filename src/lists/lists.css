@@ -33,7 +33,7 @@
   flex-direction: column;
   background: var(--lists-bg);
   color: var(--lists-text);
-  font-family: "DM Sans", system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   overflow: hidden;
 }
 
