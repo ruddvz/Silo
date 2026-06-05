@@ -43,74 +43,39 @@ async function deleteFileInVault(vault, subdir, name) {
   }
 }
 
-const MANIFEST = "manifest.json";
+import {
+  normalizeEntry,
+  saveManifestEntries,
+  loadManifestEntries,
+  CURRENT_MANIFEST_VERSION,
+} from "./manifestMeta.js";
+import { runVaultMigrations } from "./migrations/index.js";
+
+export { CURRENT_MANIFEST_VERSION };
+/** @typedef {import("./manifestMeta.js").VaultManifestEntry} VaultManifestEntry */
 
 /**
- * @typedef {"pdf" | "text" | "audio" | "file" | "image"} VaultKind
- * @typedef {"opfs" | "linked"} VaultStorage
- * @typedef {{
- *   id: string,
- *   name: string,
- *   tag: string,
- *   kind: VaultKind,
- *   createdAt: string,
- *   sizeBytes: number,
- *   mimeType?: string,
- *   storage?: VaultStorage,
- *   linkedPath?: string,
- *   contentHash?: string,
- *   textFingerprint?: string,
- * }} VaultManifestEntry
+ * Initialize vault: run migrations then return normalized entries.
+ * @param {FileSystemDirectoryHandle} vault
  */
-
-/** @param {object} raw @returns {VaultManifestEntry} */
-function normalizeEntry(raw) {
-  const id = String(raw.id);
-  let kind = raw.kind;
-  if (!kind) {
-    const n = String(raw.name || "").toLowerCase();
-    if (n.endsWith(".pdf")) kind = "pdf";
-    else if (/\.(png|jpe?g|gif|webp|bmp|heic|heif)$/i.test(n)) kind = "image";
-    else if (/\.(m4a|aac|mp3|wav|webm|ogg|opus|flac)$/i.test(n)) kind = "audio";
-    else kind = "file";
-  }
-  return {
-    id,
-    name: raw.name,
-    tag: raw.tag,
-    kind,
-    createdAt: raw.createdAt,
-    sizeBytes: Number(raw.sizeBytes) || 0,
-    mimeType: raw.mimeType,
-    storage: raw.storage === "linked" ? "linked" : "opfs",
-    linkedPath: typeof raw.linkedPath === "string" ? raw.linkedPath : undefined,
-    contentHash: typeof raw.contentHash === "string" ? raw.contentHash : undefined,
-    textFingerprint: typeof raw.textFingerprint === "string" ? raw.textFingerprint : undefined,
-  };
+export async function initializeVault(vault) {
+  const { entries } = await runVaultMigrations(vault);
+  return entries.map(normalizeEntry);
 }
 
 /** @param {FileSystemDirectoryHandle} vault */
 export async function loadManifest(vault) {
   try {
-    const handle = await vault.getFileHandle(MANIFEST);
-    const file = await handle.getFile();
-    const text = await file.text();
-    const data = JSON.parse(text);
-    if (!data?.entries || !Array.isArray(data.entries)) return [];
-    return data.entries.map(normalizeEntry);
-  } catch {
-    return [];
+    return await initializeVault(vault);
+  } catch (err) {
+    console.warn("Vault migration failed, falling back to raw manifest", err);
+    return loadManifestEntries(vault);
   }
 }
 
 /** @param {FileSystemDirectoryHandle} vault @param {VaultManifestEntry[]} entries */
 export async function saveManifest(vault, entries) {
-  const json = JSON.stringify({ version: 6, entries }, null, 0);
-  const blob = new Blob([json], { type: "application/json" });
-  const handle = await vault.getFileHandle(MANIFEST, { create: true });
-  const writable = await handle.createWritable();
-  await writable.write(blob);
-  await writable.close();
+  await saveManifestEntries(vault, entries.map(normalizeEntry));
 }
 
 /**

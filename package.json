@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vite build && node scripts/gh-pages-postbuild.mjs",
     "lint": "eslint .",
+    "test": "vitest run --config vite.config.test.js",
+    "test:watch": "vitest --config vite.config.test.js",
     "gen:icons": "node scripts/gen-pwa-icons.mjs",
     "preview": "vite preview"
   },
@@ -36,6 +38,7 @@
     "sharp": "^0.34.5",
     "vite": "^6.2.0",
     "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^4.1.8",
     "workbox-core": "^7.4.1",
     "workbox-expiration": "^7.4.1",
     "workbox-precaching": "^7.4.1",

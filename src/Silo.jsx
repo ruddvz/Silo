@@ -35,8 +35,9 @@ import { buildVaultZip, parseVaultZip, applyVaultZipToOpfs } from "./vault/expor
 import { persistSecureText, decodeStoredText, isEncryptedStoredPayload, isPassphraseActive } from "./vault/secureText.js";
 import { sha256HexFromBlob } from "./vault/fileHash.js";
 import { textContentFingerprint } from "./vault/textFingerprint.js";
-import { checkVaultIntegrity } from "./vault/integrity.js";
+import { checkVaultHealth } from "./vault/health.js";
 import { repairVaultEntry } from "./vault/repair.js";
+import { VaultRecoveryScreen } from "./components/VaultRecoveryScreen.jsx";
 import { summarizeExtractive } from "./vault/summarize.js";
 import { SearchBar } from "./components/SearchBar.jsx";
 import { DocumentList } from "./components/DocumentList.jsx";
@@ -563,6 +564,8 @@ export default function Silo({ onOpenLists }) {
     () => (typeof localStorage !== "undefined" ? localStorage.getItem("silo_density") : null) || "comfortable",
   );
   const [storageStats, setStorageStats] = useState(/** @type {{ usage: number, quota: number } | null} */ (null));
+  const [vaultHealthReport, setVaultHealthReport] = useState(/** @type {import("./vault/health.js").ReturnType<typeof checkVaultHealth> extends Promise<infer R> ? R | null : null} */ (null));
+  const [showRecoveryScreen, setShowRecoveryScreen] = useState(false);
 
   const storageMode = useStorageMode();
   const { showBanner: showInstallBanner, deferredPrompt, install: pwaInstall, dismiss: dismissInstallBanner } = usePWAInstall();
@@ -797,6 +800,12 @@ export default function Silo({ onOpenLists }) {
         }
         setDocs((prev) => mergeDocs(prev.filter((d) => d.source !== "local"), localRows));
         setContentById((prev) => ({ ...prev, ...contentUpdates }));
+
+        const health = await checkVaultHealth(vault, entries, { semanticSearchEnabled });
+        if (!cancelled) {
+          setVaultHealthReport(health);
+          setShowRecoveryScreen(!health.healthy && health.summary.critical > 0);
+        }
         const embMap = {};
         for (const e of entries) {
           const emb = await loadEmbedding(vault, e.id);
@@ -810,7 +819,7 @@ export default function Silo({ onOpenLists }) {
     return () => {
       cancelled = true;
     };
-  }, [vaultPassphrase, vaultEpoch]);
+  }, [vaultPassphrase, vaultEpoch, semanticSearchEnabled]);
 
   const searchIndex = useMemo(() => {
     const rows = docs.map((d) => ({
@@ -1536,14 +1545,16 @@ export default function Silo({ onOpenLists }) {
       showToast("No local entries");
       return;
     }
-    const issues = await checkVaultIntegrity(vault, entries);
-    if (!issues.length) showToast("Vault integrity OK");
+    const report = await checkVaultHealth(vault, entries, { semanticSearchEnabled });
+    setVaultHealthReport(report);
+    if (report.healthy) showToast("Vault health OK");
     else {
+      setShowRecoveryScreen(report.summary.critical > 0);
       showToast(
-        `${issues.length} issue(s): ${issues.slice(0, 3).map((i) => i.code).join(", ")}${issues.length > 3 ? "…" : ""}`,
+        `${report.summary.total} issue(s): ${report.issues.slice(0, 3).map((i) => i.code).join(", ")}${report.summary.total > 3 ? "…" : ""}`,
       );
     }
-  }, [showToast]);
+  }, [showToast, semanticSearchEnabled]);
 
   const handleRepairVault = useCallback(async () => {
     const vault = vaultRef.current;
@@ -1565,13 +1576,17 @@ export default function Silo({ onOpenLists }) {
       }
       setVaultEpoch((x) => x + 1);
       showToast("Repair pass complete — reindexed from blobs");
+      const entriesAfter = await loadManifest(vault);
+      const report = await checkVaultHealth(vault, entriesAfter, { semanticSearchEnabled });
+      setVaultHealthReport(report);
+      setShowRecoveryScreen(!report.healthy && report.summary.critical > 0);
     } catch (err) {
       console.error(err);
       showToast("Repair failed");
     } finally {
       setIngestBusy(false);
     }
-  }, [resolveLocalFile, vaultPassphrase, showToast]);
+  }, [resolveLocalFile, vaultPassphrase, showToast, semanticSearchEnabled]);
 
   const handleClearShareQueue = useCallback(async () => {
     await clearAllPendingShares();
@@ -2425,6 +2440,23 @@ export default function Silo({ onOpenLists }) {
             doc={renameDoc}
             onConfirm={(newName) => { void handleRename(renameDoc, newName); }}
             onCancel={() => setRenameDoc(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showRecoveryScreen && vaultHealthReport && !vaultHealthReport.healthy && (
+          <VaultRecoveryScreen
+            issues={vaultHealthReport.issues}
+            summary={vaultHealthReport.summary}
+            busy={ingestBusy}
+            onExportBackup={() => { void handleExportVaultZip(); }}
+            onRepair={() => { void handleRepairVault(); }}
+            onDismiss={
+              vaultHealthReport.summary.critical === 0
+                ? () => setShowRecoveryScreen(false)
+                : undefined
+            }
           />
         )}
       </AnimatePresence>
