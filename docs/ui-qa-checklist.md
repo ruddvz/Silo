@@ -36,4 +36,6 @@
 - [x] `npm run lint`
 - [x] `npm run test`
 - [x] `npm run build`
+- [x] Render check (`scripts/check-render.mjs`)
+- [x] Visual QA at 8 viewports (`scripts/visual-qa.mjs`, Playwright)
 - [x] Axe scan (quality workflow)

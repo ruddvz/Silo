@@ -43,12 +43,18 @@ All phases complete — merged in PRs #19–#23.
 
 See `docs/ui-redesign-progress.md`, `docs/ui-qa-checklist.md`, `docs/silo-ui-visual-spec.json`.
 
+## Final polish (PR after #27)
+
+| Item | Status |
+|------|--------|
+| Settings drawer SVG icons (no unicode glyphs) | ✅ |
+| Preview panel per-type excerpt + status | ✅ |
+| Playwright visual QA in CI (`test:visual`) | ✅ |
+
 ## Deferred (manual / optional)
 
 - Real-device iOS/Android QA (`docs/ios-pwa-test-plan.md`, `docs/ui-qa-checklist.md`)
 - Further `Silo.jsx` line reduction (share queue extracted; core orchestration remains)
-- Preview mobile sheet vs desktop panel split (desktop panel retained)
-- Playwright e2e (not in scope for static CI)
 
 ## Open bugs
 

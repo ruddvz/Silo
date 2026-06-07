@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 /**
  * @param {{
  *   onClose: () => void,
- *   actions: Array<{ id: string, label: string, icon: string, disabled?: boolean, danger?: boolean, keepOpen?: boolean, onSelect?: () => void }>,
+ *   actions: Array<{ id: string, label: string, icon?: import('react').ReactNode, disabled?: boolean, danger?: boolean, keepOpen?: boolean, onSelect?: () => void }>,
  *   children?: import('react').ReactNode,
  * }} props
  */
@@ -21,11 +21,13 @@ export function SettingsDrawer({ onClose, actions, children }) {
 
   return (
     <>
-      <motion.div
+      <motion.button
+        type="button"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", zIndex: 1100 }}
+        className="settings-sheet-backdrop"
+        aria-label="Close settings"
         onClick={onClose}
       />
       <motion.div
@@ -38,25 +40,27 @@ export function SettingsDrawer({ onClose, actions, children }) {
         aria-modal="true"
         aria-label="Settings"
       >
-        <div style={{ width: 36, height: 4, background: "var(--color-border)", borderRadius: 2, margin: "0 auto 20px" }} />
+        <div className="settings-sheet-grabber" aria-hidden />
         <div className="settings-sheet-title">Settings</div>
         {children}
-        {actions.map((opt, i) => (
-          <button
-            key={opt.id}
-            ref={i === 0 ? firstRef : null}
-            type="button"
-            disabled={opt.disabled}
-            className={`settings-row ${opt.danger ? "settings-row--danger" : ""}`}
-            onClick={() => {
-              opt.onSelect?.();
-              if (!opt.keepOpen) onClose();
-            }}
-          >
-            <span>{opt.label}</span>
-            <span style={{ color: "var(--color-text-muted)", fontSize: 16 }}>{opt.icon}</span>
-          </button>
-        ))}
+        <div className="settings-sheet-actions">
+          {actions.map((opt, i) => (
+            <button
+              key={opt.id}
+              ref={i === 0 ? firstRef : null}
+              type="button"
+              disabled={opt.disabled}
+              className={`settings-row ${opt.danger ? "settings-row--danger" : ""}`}
+              onClick={() => {
+                opt.onSelect?.();
+                if (!opt.keepOpen) onClose();
+              }}
+            >
+              <span className="settings-row__label">{opt.label}</span>
+              {opt.icon && <span className="settings-row__icon" aria-hidden>{opt.icon}</span>}
+            </button>
+          ))}
+        </div>
       </motion.div>
     </>
   );
